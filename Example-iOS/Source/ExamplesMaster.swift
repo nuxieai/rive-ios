@@ -147,6 +147,25 @@ extension ExamplesMasterTableViewController {
     
     override func viewDidLoad() {
         addFPSToggleButton()
+        autoNavigateIfRequested()
+    }
+
+    private func autoNavigateIfRequested() {
+        let args = ProcessInfo.processInfo.arguments
+        let env = ProcessInfo.processInfo.environment
+
+        guard args.contains("--rive-open-text-input") || env["RIVE_OPEN_TEXT_INPUT"] == "1" else {
+            return
+        }
+
+        // Push after the navigation stack is ready.
+        DispatchQueue.main.async {
+            guard let index = self.swiftViews.firstIndex(where: { $0.0 == "Playing with Text" }) else {
+                return
+            }
+            let controller = UIHostingController(rootView: self.swiftViews[index].1)
+            self.navigationController?.pushViewController(controller, animated: false)
+        }
     }
     
     @objc private func toggleFPSCounter() {

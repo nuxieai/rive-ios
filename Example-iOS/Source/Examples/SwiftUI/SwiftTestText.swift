@@ -12,26 +12,32 @@ import RiveRuntime
 struct TextInputView: DismissableView {
     var dismiss: () -> Void = {}
     
-    @State private var userInput: String = ""
     @StateObject private var rvm = RiveViewModel(fileName: "text_test_2")
+    @State private var textInputHandle: RiveTextInputHandle?
 
     var body: some View {
         VStack(spacing: 20) {
-            Text("Enter text:")
+            Text("Tap the text in the Rive view to edit:")
                 .font(.headline)
-            TextField("Enter text...", text: $userInput)
-                .textFieldStyle(RoundedBorderTextFieldStyle())
-                .padding()
-                .onChange(of: userInput, perform: { newValue in
-                    if (!newValue.isEmpty) {
+            rvm.view()
+                .onAppear {
+                    Task { @MainActor in
+                        guard textInputHandle == nil else { return }
                         do {
-                           try rvm.setTextRunValue("MyRun", textValue: userInput)
+                            var binding = RiveTextInputBinding(textRunName: "MyRun")
+                            binding.renderMode = .riveRendersText
+                            textInputHandle = try rvm.bindTextInput(binding)
                         } catch {
                             debugPrint(error)
                         }
                     }
-                })
-            rvm.view()
+                }
+                .onDisappear {
+                    Task { @MainActor in
+                        textInputHandle?.remove()
+                        textInputHandle = nil
+                    }
+                }
         }
         .padding()
     }

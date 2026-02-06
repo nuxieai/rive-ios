@@ -49,6 +49,11 @@ fit:(RiveFit)fit DEPRECATED_MSG_ATTRIBUTE("Use alignWithRect:contentRect:alignme
                                   inArtboard:(CGRect)artboardRect
                                          fit:(RiveFit)fit
                                    alignment:(RiveAlignment)alignment;
+/// Returns a transform that maps points in artboard space into this view's coordinate space.
+/// This uses the same `Fit` / `Alignment` math as touch mapping (points, not pixels).
+- (CGAffineTransform)artboardToViewTransformForArtboardRect:(CGRect)artboardRect
+                                                        fit:(RiveFit)fit
+                                                  alignment:(RiveAlignment)alignment;
 
 NS_ASSUME_NONNULL_END
 @end

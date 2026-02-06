@@ -7,6 +7,10 @@
 //
 
 import Foundation
+#if canImport(UIKit)
+import UIKit
+import CoreText
+#endif
 
 open class RiveView: RiveRendererView {
     struct Constants {
@@ -79,6 +83,10 @@ open class RiveView: RiveRendererView {
     // MARK: Delegates
     @objc public weak var playerDelegate: RivePlayerDelegate?
     public weak var stateMachineDelegate: RiveStateMachineDelegate?
+#if canImport(UIKit)
+    public weak var textInputDelegate: RiveTextInputDelegate?
+    private var textInputOverlaysByID: [UUID: _RiveTextInputOverlay] = [:]
+#endif
     
     // MARK: Debug
     private var fpsCounter: FPSCounterView? = nil
@@ -171,6 +179,9 @@ open class RiveView: RiveRendererView {
     }
 
     deinit {
+#if canImport(UIKit)
+        _removeAllTextInputOverlays()
+#endif
         stopTimer()
         
         #if os(iOS)
@@ -448,6 +459,9 @@ open class RiveView: RiveRendererView {
         align(with: newFrame, contentRect: artboard.bounds(), alignment: alignment, fit: fit, scaleFactor: scale)
         draw(with: artboard)
 
+#if canImport(UIKit)
+        updateTextInputOverlays()
+#endif
     }
 
     open override func draw(_ rect: CGRect) {
@@ -483,10 +497,22 @@ open class RiveView: RiveRendererView {
         }
     }
 
-    #if canImport(UIKit) || RIVE_MAC_CATALYST
+#if canImport(UIKit) || RIVE_MAC_CATALYST
     open override func layoutSubviews() {
         super.layoutSubviews()
         drawableSizeDidChange(drawableSize)
+#if canImport(UIKit)
+        updateTextInputOverlays()
+#endif
+    }
+    #endif
+
+    #if os(iOS)
+    open override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+#if canImport(UIKit)
+        updateTextInputOverlays()
+#endif
     }
     #endif
 
@@ -519,6 +545,12 @@ open class RiveView: RiveRendererView {
     #if os(iOS) || os(visionOS) || os(tvOS)
         open override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
             for touch in touches {
+#if canImport(UIKit)
+                let location = touch.location(in: self)
+                if focusTextInputIfNeeded(at: location) {
+                    continue
+                }
+#endif
                 guard let id = touchPool.add(touch) else {
                     return
                 }
@@ -766,6 +798,150 @@ open class RiveView: RiveRendererView {
         }
     #endif
     
+    // MARK: - Text Input Overlay (UIKit)
+    #if canImport(UIKit)
+
+    /// Creates and manages an overlay text input bound to a `TextValueRun`.
+    @MainActor
+    @discardableResult
+    public func bindTextInput(_ binding: RiveTextInputBinding) throws -> RiveTextInputHandle {
+        let handle = RiveTextInputHandle(binding: binding)
+        try attachTextInput(handle)
+        return handle
+    }
+
+    @MainActor
+    public func unbindTextInput(_ handle: RiveTextInputHandle) {
+        removeTextInput(handle.id)
+        handle.detach()
+    }
+
+    @MainActor
+    public func unbindAllTextInputs() {
+        let handles = textInputOverlaysByID.keys.compactMap { id in
+            textInputOverlaysByID[id]?.handle
+        }
+        _removeAllTextInputOverlays()
+        handles.forEach { $0.detach() }
+    }
+
+    @MainActor
+    func attachTextInput(_ handle: RiveTextInputHandle) throws {
+        guard handle.riveView == nil || handle.riveView === self else {
+            throw RiveTextInputError.bindingAlreadyAttachedToAnotherView
+        }
+
+        #if WITH_RIVE_TEXT
+        guard let artboard = riveModel?.artboard else {
+            throw RiveTextInputError.missingArtboard
+        }
+
+        let run: RiveTextValueRun?
+        if let path = handle.binding.path, !path.isEmpty {
+            run = artboard.textRun(handle.binding.textRunName, path: path)
+        } else {
+            run = artboard.textRun(handle.binding.textRunName)
+        }
+
+        guard let run else {
+            throw RiveTextInputError.textRunNotFound(
+                name: handle.binding.textRunName,
+                path: handle.binding.path
+            )
+        }
+
+        // Idempotent for the same handle id.
+        if let existing = textInputOverlaysByID[handle.id] {
+            handle.attach(to: self, textInputView: existing.view)
+            return
+        }
+
+        let overlay = _RiveTextInputOverlay(handle: handle, initialRun: run, riveView: self)
+        textInputOverlaysByID[handle.id] = overlay
+
+        addSubview(overlay.view)
+        updateTextInputOverlays()
+
+        #else
+        throw RiveTextInputError.textNotSupportedByBuild
+        #endif
+    }
+
+    @MainActor
+    fileprivate func removeTextInput(_ id: UUID) {
+        guard let overlay = textInputOverlaysByID.removeValue(forKey: id) else { return }
+        overlay.blur()
+        overlay.view.removeFromSuperview()
+    }
+
+    fileprivate func _removeAllTextInputOverlays() {
+        // This can be invoked from `deinit`, so keep it synchronous and best-effort.
+        for (_, overlay) in textInputOverlaysByID {
+            overlay.blur()
+            overlay.view.removeFromSuperview()
+        }
+        textInputOverlaysByID.removeAll()
+    }
+
+    fileprivate func updateTextInputOverlays() {
+        guard !textInputOverlaysByID.isEmpty else { return }
+        guard let artboard = riveModel?.artboard else { return }
+        let artboardBounds = artboard.bounds()
+
+        // Use the same transform math as touch mapping (points, not pixels).
+        let artboardToView = artboardToViewTransform(
+            forArtboardRect: artboardBounds,
+            fit: fit,
+            alignment: alignment
+        )
+
+        for overlay in textInputOverlaysByID.values {
+            // Defensive: if UIKit ever re-parents the text input view (or a
+            // developer moves it), re-attach so it always follows this view's
+            // transforms/layout.
+            if overlay.view.superview !== self {
+                addSubview(overlay.view)
+            } else {
+                bringSubviewToFront(overlay.view)
+            }
+            overlay.update(artboard: artboard, artboardToView: artboardToView)
+        }
+    }
+
+    fileprivate func focusTextInputIfNeeded(at viewLocation: CGPoint) -> Bool {
+        guard let artboard = riveModel?.artboard else { return false }
+        guard !textInputOverlaysByID.isEmpty else { return false }
+
+        // Convert to root artboard space to compare against text-local bounds.
+        let artboardPoint = artboardLocation(
+            fromTouchLocation: viewLocation,
+            inArtboard: artboard.bounds(),
+            fit: fit,
+            alignment: alignment
+        )
+
+        for overlay in textInputOverlaysByID.values {
+            if overlay.tryFocusIfHit(artboardPoint: artboardPoint) {
+                return true
+            }
+        }
+        return false
+    }
+
+    fileprivate func _focusTextInput(_ id: UUID) {
+        textInputOverlaysByID[id]?.focus()
+    }
+
+    fileprivate func _blurTextInput(_ id: UUID) {
+        textInputOverlaysByID[id]?.blur()
+    }
+
+    fileprivate func _removeTextInput(_ id: UUID) {
+        removeTextInput(id)
+    }
+
+    #endif
+
     // MARK: - Debug
     
     private func setFPSCounterVisibility() {
@@ -804,6 +980,641 @@ open class RiveView: RiveRendererView {
         #endif
     }
 }
+
+#if canImport(UIKit)
+
+public enum RiveTextInputKind {
+    case automatic
+    case singleLine
+    case multiLine
+}
+
+public enum RiveTextInputRenderMode {
+    case nativeRendersText
+    case riveRendersText
+}
+
+public struct RiveTextInputBinding {
+    public var textRunName: String
+    public var path: String?
+    public var kind: RiveTextInputKind
+    public var renderMode: RiveTextInputRenderMode
+
+    public var hitSlop: UIEdgeInsets
+    public var focusOnTap: Bool
+
+    public var focusBoolInputName: String?
+    public var focusBoolInputPath: String?
+    public var focusTriggerInputName: String?
+    public var focusTriggerInputPath: String?
+
+    public var keyboardType: UIKeyboardType
+    public var returnKeyType: UIReturnKeyType
+    public var textContentType: UITextContentType?
+    public var autocapitalizationType: UITextAutocapitalizationType
+    public var autocorrectionType: UITextAutocorrectionType
+    public var spellCheckingType: UITextSpellCheckingType
+    public var isSecureTextEntry: Bool
+
+    public var mirrorStyleFromRive: Bool
+    public var styleOverride: (@MainActor (UIView & UITextInputTraits) -> Void)?
+
+    public init(textRunName: String, path: String? = nil) {
+        self.textRunName = textRunName
+        self.path = path
+        self.kind = .automatic
+        self.renderMode = .nativeRendersText
+
+        self.hitSlop = .zero
+        self.focusOnTap = true
+
+        self.focusBoolInputName = nil
+        self.focusBoolInputPath = nil
+        self.focusTriggerInputName = nil
+        self.focusTriggerInputPath = nil
+
+        self.keyboardType = .default
+        self.returnKeyType = .default
+        self.textContentType = nil
+        self.autocapitalizationType = .sentences
+        self.autocorrectionType = .default
+        self.spellCheckingType = .default
+        self.isSecureTextEntry = false
+
+        self.mirrorStyleFromRive = true
+        self.styleOverride = nil
+    }
+}
+
+public protocol RiveTextInputDelegate: AnyObject {
+    func riveTextInputDidBeginEditing(_ input: RiveTextInputHandle)
+    func riveTextInputDidChange(_ input: RiveTextInputHandle)
+    func riveTextInputDidEndEditing(_ input: RiveTextInputHandle)
+    func riveTextInputDidSubmit(_ input: RiveTextInputHandle)
+}
+
+public enum RiveTextInputError: Error, LocalizedError {
+    case textNotSupportedByBuild
+    case missingArtboard
+    case textRunNotFound(name: String, path: String?)
+    case bindingAlreadyAttachedToAnotherView
+
+    public var errorDescription: String? {
+        switch self {
+        case .textNotSupportedByBuild:
+            return "Text input requires a build with WITH_RIVE_TEXT enabled."
+        case .missingArtboard:
+            return "No active artboard is available on this RiveView."
+        case .textRunNotFound(let name, let path):
+            if let path, !path.isEmpty {
+                return "Could not find TextValueRun named \"\(name)\" at path \"\(path)\"."
+            }
+            return "Could not find TextValueRun named \"\(name)\"."
+        case .bindingAlreadyAttachedToAnotherView:
+            return "This text input handle is already attached to another RiveView."
+        }
+    }
+}
+
+public final class RiveTextInputHandle: Hashable {
+    public let binding: RiveTextInputBinding
+    fileprivate let id: UUID = UUID()
+    fileprivate weak var riveView: RiveView?
+    fileprivate weak var textInputView: UIView?
+
+    init(binding: RiveTextInputBinding) {
+        self.binding = binding
+    }
+
+    public var isEditing: Bool {
+        textInputView?.isFirstResponder ?? false
+    }
+
+    @MainActor
+    public func focus() {
+        riveView?._focusTextInput(id)
+    }
+
+    @MainActor
+    public func blur() {
+        riveView?._blurTextInput(id)
+    }
+
+    @MainActor
+    public func remove() {
+        riveView?._removeTextInput(id)
+        detach()
+    }
+
+    fileprivate func attach(to view: RiveView, textInputView: UIView) {
+        self.riveView = view
+        self.textInputView = textInputView
+    }
+
+    fileprivate func detach() {
+        riveView = nil
+        textInputView = nil
+    }
+
+    public static func == (lhs: RiveTextInputHandle, rhs: RiveTextInputHandle) -> Bool {
+        lhs.id == rhs.id
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+}
+
+private func _riveUIColorFromARGB(_ argb: UInt32) -> UIColor {
+    let a = CGFloat((argb >> 24) & 0xFF) / 255.0
+    let r = CGFloat((argb >> 16) & 0xFF) / 255.0
+    let g = CGFloat((argb >> 8) & 0xFF) / 255.0
+    let b = CGFloat(argb & 0xFF) / 255.0
+    return UIColor(red: r, green: g, blue: b, alpha: a)
+}
+
+private func _riveTextAlignment(fromRiveValue value: Int) -> NSTextAlignment {
+    switch value {
+    case 0: return .left
+    case 1: return .right
+    case 2: return .center
+    default: return .natural
+    }
+}
+
+private func _riveExpandedRect(_ rect: CGRect, hitSlop: UIEdgeInsets) -> CGRect {
+    rect.inset(
+        by: UIEdgeInsets(
+            top: -hitSlop.top,
+            left: -hitSlop.left,
+            bottom: -hitSlop.bottom,
+            right: -hitSlop.right
+        )
+    )
+}
+
+private final class _RiveTextField: UITextField {
+    override func textRect(forBounds bounds: CGRect) -> CGRect { bounds }
+    override func editingRect(forBounds bounds: CGRect) -> CGRect { bounds }
+    override func placeholderRect(forBounds bounds: CGRect) -> CGRect { bounds }
+}
+
+fileprivate final class _RiveTextInputOverlay: NSObject, UITextFieldDelegate, UITextViewDelegate {
+    let handle: RiveTextInputHandle
+    private weak var riveView: RiveView?
+
+    let view: UIView
+    private let textField: _RiveTextField?
+    private let textView: UITextView?
+
+    private var cachedLocalBounds: CGRect?
+    private var cachedRootTransform: CGAffineTransform?
+
+    private var isComposingText: Bool {
+        if let tf = textField { return tf.markedTextRange != nil }
+        if let tv = textView { return tv.markedTextRange != nil }
+        return false
+    }
+
+    private var isEditing: Bool {
+        view.isFirstResponder
+    }
+
+    init(handle: RiveTextInputHandle, initialRun: RiveTextValueRun, riveView: RiveView) {
+        self.handle = handle
+        self.riveView = riveView
+
+        // Initial text from the run.
+        let initialText = initialRun.text()
+
+        let resolvedKind: RiveTextInputKind = {
+            switch handle.binding.kind {
+            case .singleLine, .multiLine:
+                return handle.binding.kind
+            case .automatic:
+                // If the existing text contains line breaks, always use multi-line.
+                if initialText.contains("\n") || initialText.contains("\r") {
+                    return .multiLine
+                }
+
+                let wrap = Int(initialRun.textWrap())
+                let sizing = Int(initialRun.textSizing())
+                // rive::TextWrap { wrap = 0, noWrap = 1 }
+                // rive::TextSizing { autoWidth = 0, autoHeight = 1, fixed = 2 }
+                //
+                // When sizing is autoWidth, Rive effectively has no width constraint, so
+                // wrapping will not occur unless the string contains explicit line breaks.
+                if wrap == 1 || sizing == 0 {
+                    return .singleLine
+                }
+                return .multiLine
+            }
+        }()
+
+	        if resolvedKind == .singleLine {
+	            let tf = _RiveTextField(frame: .zero)
+	            tf.borderStyle = .none
+	            tf.backgroundColor = .clear
+	            tf.autocapitalizationType = handle.binding.autocapitalizationType
+	            tf.autocorrectionType = handle.binding.autocorrectionType
+	            tf.spellCheckingType = handle.binding.spellCheckingType
+	            tf.keyboardType = handle.binding.keyboardType
+	            tf.returnKeyType = handle.binding.returnKeyType
+            tf.textContentType = handle.binding.textContentType
+            tf.isSecureTextEntry = handle.binding.isSecureTextEntry
+            tf.clipsToBounds = false
+
+            self.view = tf
+            self.textField = tf
+            self.textView = nil
+	        } else {
+	            let tv = UITextView(frame: .zero)
+	            tv.backgroundColor = .clear
+	            tv.autocapitalizationType = handle.binding.autocapitalizationType
+	            tv.autocorrectionType = handle.binding.autocorrectionType
+	            tv.spellCheckingType = handle.binding.spellCheckingType
+	            tv.keyboardType = handle.binding.keyboardType
+            tv.returnKeyType = handle.binding.returnKeyType
+            tv.textContentType = handle.binding.textContentType
+            tv.isSecureTextEntry = handle.binding.isSecureTextEntry
+            tv.textContainerInset = .zero
+            tv.textContainer.lineFragmentPadding = 0
+            tv.clipsToBounds = false
+            tv.isScrollEnabled = true
+
+            self.view = tv
+            self.textField = nil
+            self.textView = tv
+        }
+
+	        super.init()
+	
+	        if let tf = textField {
+	            tf.delegate = self
+	            tf.addTarget(self, action: #selector(textFieldEditingChanged(_:)), for: .editingChanged)
+	        } else if let tv = textView {
+	            tv.delegate = self
+	        }
+
+        if let tf = textField {
+            tf.text = initialText
+        } else if let tv = textView {
+            tv.text = initialText
+        }
+
+        // Default interaction strategy: click-through until editing, then allow
+        // UIKit to handle selection/drag handles naturally.
+        if handle.binding.focusOnTap {
+            view.isUserInteractionEnabled = false
+        }
+
+        // Hook handle back to this overlay.
+        handle.attach(to: riveView, textInputView: view)
+    }
+
+    func update(artboard: RiveArtboard, artboardToView: CGAffineTransform) {
+        let run: RiveTextValueRun?
+        if let path = handle.binding.path, !path.isEmpty {
+            run = artboard.textRun(handle.binding.textRunName, path: path)
+        } else {
+            run = artboard.textRun(handle.binding.textRunName)
+        }
+
+        guard let run else {
+            view.isHidden = true
+            cachedLocalBounds = nil
+            cachedRootTransform = nil
+            return
+        }
+
+        view.isHidden = false
+
+        let localBounds = run.localBounds()
+        let rootTransform = run.rootShapeWorldTransform()
+        cachedLocalBounds = localBounds
+        cachedRootTransform = rootTransform
+
+        // `rootTransform` maps text-local -> root artboard space.
+        // `artboardToView` maps root artboard -> view (UIKit points).
+        // Order matters: apply rootTransform first, then artboardToView.
+        let textToView = rootTransform.concatenating(artboardToView)
+
+        // Apply geometry.
+        let w = localBounds.size.width
+        let h = localBounds.size.height
+        if w > 0, h > 0 {
+            let centerLocal = CGPoint(x: localBounds.midX, y: localBounds.midY)
+            let centerView = centerLocal.applying(textToView)
+            let linear = CGAffineTransform(a: textToView.a, b: textToView.b, c: textToView.c, d: textToView.d, tx: 0, ty: 0)
+
+            UIView.performWithoutAnimation {
+                view.bounds = CGRect(x: 0, y: 0, width: w, height: h)
+                view.transform = linear
+                view.center = centerView
+            }
+        }
+
+        if handle.binding.mirrorStyleFromRive {
+            applyStyle(from: run)
+        }
+
+        // Ensure renderMode always applies even if style mirroring is disabled.
+        applyRenderModeVisibility()
+
+        // Apply developer overrides last.
+        if let override = handle.binding.styleOverride, let traitsView = view as? (UIView & UITextInputTraits) {
+            Task { @MainActor in
+                override(traitsView)
+            }
+        }
+
+        // Sync native text from Rive only when not editing and not composing.
+        if !isEditing && !isComposingText {
+            let riveText = run.text()
+            if let tf = textField, tf.text != riveText {
+                tf.text = riveText
+            } else if let tv = textView, tv.text != riveText {
+                tv.text = riveText
+            }
+        }
+    }
+
+    private func applyRenderModeVisibility() {
+        guard handle.binding.renderMode == .riveRendersText else { return }
+
+        // Don't set alpha to 0; UIKit skips hit testing for near-transparent views.
+        let invisible = UIColor.clear
+
+        if let tf = textField {
+            tf.textColor = invisible
+
+            var attrs = tf.defaultTextAttributes
+            attrs[.foregroundColor] = invisible
+            tf.defaultTextAttributes = attrs
+        } else if let tv = textView {
+            tv.textColor = invisible
+
+            var attrs = tv.typingAttributes
+            attrs[.foregroundColor] = invisible
+            tv.typingAttributes = attrs
+        }
+    }
+
+    func tryFocusIfHit(artboardPoint: CGPoint) -> Bool {
+        guard handle.binding.focusOnTap else { return false }
+        guard !isEditing else { return false }
+        guard let localBounds = cachedLocalBounds, let rootTransform = cachedRootTransform else { return false }
+
+        let det = rootTransform.a * rootTransform.d - rootTransform.b * rootTransform.c
+        if abs(det) < 1e-6 {
+            return false
+        }
+
+        let localPoint = artboardPoint.applying(rootTransform.inverted())
+        let hitRect = _riveExpandedRect(localBounds, hitSlop: handle.binding.hitSlop)
+        guard hitRect.contains(localPoint) else { return false }
+
+        focus()
+        return true
+    }
+
+    func focus() {
+        // Once focused, allow UIKit to handle editing gestures.
+        view.isUserInteractionEnabled = true
+
+        if view.canBecomeFirstResponder {
+            _ = view.becomeFirstResponder()
+        }
+    }
+
+    func blur() {
+        _ = view.resignFirstResponder()
+    }
+
+    private func applyStyle(from run: RiveTextValueRun) {
+        let fontSize = CGFloat(run.fontSize())
+        let lineHeight = CGFloat(run.lineHeight())
+        let letterSpacing = CGFloat(run.letterSpacing())
+        let align = Int(run.textAlign())
+        let overflow = Int(run.textOverflow())
+
+        let existingFont = (textField?.font ?? textView?.font)
+        let desiredFontSize: CGFloat
+        if fontSize > 0 {
+            desiredFontSize = fontSize
+        } else if let existingFont {
+            desiredFontSize = existingFont.pointSize
+        } else {
+            desiredFontSize = UIFont.systemFontSize
+        }
+
+        let variationKey = UIFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String)
+        let wghtTag: UInt32 = 0x77676874 // "wght"
+
+        // Prefer the exact font embedded in the .riv file if it was registered
+        // via CoreText during asset load. If the embedded font is variable,
+        // also apply the current weight axis ("wght") so UIKit matches Rive's
+        // shaping/metrics.
+        let baseFont: UIFont = {
+            let fontKey = run.fontAssetKey()
+            if !fontKey.isEmpty,
+               let postScriptName = RiveFontAssetRegistry.postScriptName(forAssetKey: fontKey as NSString) as String?,
+               let base = UIFont(name: postScriptName, size: desiredFontSize) {
+
+                let wght = CGFloat(run.fontWeight())
+                if wght.isFinite, wght > 0 {
+                    let clamped = max(1, min(1000, wght))
+                    var variations = (base.fontDescriptor.object(forKey: variationKey) as? [NSNumber: Any]) ?? [:]
+                    variations[NSNumber(value: wghtTag)] = NSNumber(value: Double(clamped))
+
+                    let desc = base.fontDescriptor.addingAttributes([variationKey: variations])
+                    return UIFont(descriptor: desc, size: desiredFontSize)
+                }
+
+                return base
+            }
+
+            if let existingFont {
+                return existingFont.withSize(desiredFontSize)
+            }
+            return UIFont.systemFont(ofSize: desiredFontSize)
+        }()
+
+        let riveColorARGB = run.solidFillColorARGB()
+        let baseColor: UIColor = (riveColorARGB != 0) ? _riveUIColorFromARGB(riveColorARGB) : .label
+
+        let textColor: UIColor
+        switch handle.binding.renderMode {
+        case .nativeRendersText:
+            textColor = baseColor
+        case .riveRendersText:
+            textColor = .clear
+        }
+
+        let tintColor: UIColor = (riveColorARGB != 0) ? baseColor : .systemBlue
+
+        let alignment = _riveTextAlignment(fromRiveValue: align)
+
+        view.clipsToBounds = overflow != 0 // overflow != visible
+
+        if let tf = textField {
+            tf.font = baseFont
+            tf.textAlignment = alignment
+            tf.textColor = textColor
+            tf.tintColor = tintColor
+
+            var attrs = tf.defaultTextAttributes
+            attrs[.font] = baseFont
+            attrs[.foregroundColor] = textColor
+            if letterSpacing != 0 {
+                attrs[.kern] = letterSpacing
+            } else {
+                attrs.removeValue(forKey: .kern)
+            }
+            if lineHeight > 0 {
+                let p = NSMutableParagraphStyle()
+                p.minimumLineHeight = lineHeight
+                p.maximumLineHeight = lineHeight
+                attrs[.paragraphStyle] = p
+            } else {
+                attrs.removeValue(forKey: .paragraphStyle)
+            }
+            tf.defaultTextAttributes = attrs
+        } else if let tv = textView {
+            tv.font = baseFont
+            tv.textAlignment = alignment
+            tv.textColor = textColor
+            tv.tintColor = tintColor
+
+            var attrs = tv.typingAttributes
+            attrs[.font] = baseFont
+            attrs[.foregroundColor] = textColor
+            if letterSpacing != 0 {
+                attrs[.kern] = letterSpacing
+            } else {
+                attrs.removeValue(forKey: .kern)
+            }
+            if lineHeight > 0 {
+                let p = NSMutableParagraphStyle()
+                p.minimumLineHeight = lineHeight
+                p.maximumLineHeight = lineHeight
+                attrs[.paragraphStyle] = p
+            } else {
+                attrs.removeValue(forKey: .paragraphStyle)
+            }
+            tv.typingAttributes = attrs
+        }
+    }
+
+    private func propagateTextChange() {
+        guard let riveView = riveView else { return }
+
+        let text: String
+        if let tf = textField {
+            text = tf.text ?? ""
+        } else if let tv = textView {
+            text = tv.text ?? ""
+        } else {
+            return
+        }
+
+        #if WITH_RIVE_TEXT
+        guard let artboard = riveView.riveModel?.artboard else { return }
+        let run: RiveTextValueRun?
+        if let path = handle.binding.path, !path.isEmpty {
+            run = artboard.textRun(handle.binding.textRunName, path: path)
+        } else {
+            run = artboard.textRun(handle.binding.textRunName)
+        }
+        run?.setText(text)
+
+        // Ensure the artboard processes the text dirt immediately so the UIKit
+        // view can be resized before it reflows/wraps the newly inserted text.
+        artboard.advance(by: 0)
+
+        riveView.updateTextInputOverlays()
+
+        if let tv = textView {
+            tv.layoutManager.ensureLayout(for: tv.textContainer)
+        }
+
+        if riveView.isPlaying == false {
+            riveView.advance(delta: 0)
+        } else {
+            riveView.setNeedsDisplay()
+        }
+        #endif
+
+        riveView.textInputDelegate?.riveTextInputDidChange(handle)
+    }
+
+    private func setFocusInputs(isFocused: Bool) {
+        guard let riveView = riveView else { return }
+        guard let artboard = riveView.riveModel?.artboard else { return }
+
+        if let boolName = handle.binding.focusBoolInputName {
+            let path = handle.binding.focusBoolInputPath ?? ""
+            artboard.getBool(boolName, path: path).setValue(isFocused)
+            riveView.play()
+        }
+
+        if isFocused, let triggerName = handle.binding.focusTriggerInputName {
+            let path = handle.binding.focusTriggerInputPath ?? ""
+            artboard.getTrigger(triggerName, path: path).fire()
+            riveView.play()
+        }
+    }
+
+    // MARK: UITextField
+
+    @objc private func textFieldEditingChanged(_ sender: UITextField) {
+        propagateTextChange()
+    }
+
+    func textFieldDidBeginEditing(_ textField: UITextField) {
+        setFocusInputs(isFocused: true)
+        riveView?.textInputDelegate?.riveTextInputDidBeginEditing(handle)
+    }
+
+    func textFieldDidEndEditing(_ textField: UITextField) {
+        setFocusInputs(isFocused: false)
+
+        if handle.binding.focusOnTap {
+            view.isUserInteractionEnabled = false
+        }
+
+        riveView?.textInputDelegate?.riveTextInputDidEndEditing(handle)
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        riveView?.textInputDelegate?.riveTextInputDidSubmit(handle)
+        textField.resignFirstResponder()
+        return false
+    }
+
+    // MARK: UITextView
+
+    func textViewDidBeginEditing(_ textView: UITextView) {
+        setFocusInputs(isFocused: true)
+        riveView?.textInputDelegate?.riveTextInputDidBeginEditing(handle)
+    }
+
+    func textViewDidEndEditing(_ textView: UITextView) {
+        setFocusInputs(isFocused: false)
+
+        if handle.binding.focusOnTap {
+            view.isUserInteractionEnabled = false
+        }
+
+        riveView?.textInputDelegate?.riveTextInputDidEndEditing(handle)
+    }
+
+    func textViewDidChange(_ textView: UITextView) {
+        propagateTextChange()
+    }
+}
+
+#endif
 
 /// An enum of possible touch or mouse events when interacting with an animation.
 @objc public enum RiveTouchEvent: Int {
