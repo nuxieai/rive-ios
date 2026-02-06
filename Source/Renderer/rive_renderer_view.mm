@@ -477,7 +477,7 @@
 {
     // Note, we've offset the frame by the frame.origin before
     // but in testing our touch location seems to already take this into account
-    rive::AABB frame(0, 0, self.frame.size.width, self.frame.size.height);
+    rive::AABB frame(0, 0, self.bounds.size.width, self.bounds.size.height);
 
     rive::AABB content(artboardRect.origin.x,
                        artboardRect.origin.y,
@@ -500,6 +500,32 @@
     rive::Vec2D convertedLocation = inverse * frameLocation;
 
     return CGPointMake(convertedLocation.x, convertedLocation.y);
+}
+
+- (CGAffineTransform)artboardToViewTransformForArtboardRect:(CGRect)artboardRect
+                                                        fit:(RiveFit)fit
+                                                  alignment:(RiveAlignment)alignment
+{
+    rive::AABB frame(0, 0, self.bounds.size.width, self.bounds.size.height);
+
+    rive::AABB content(artboardRect.origin.x,
+                       artboardRect.origin.y,
+                       artboardRect.size.width + artboardRect.origin.x,
+                       artboardRect.size.height + artboardRect.origin.y);
+
+    auto riveFit = [self riveFit:fit];
+    auto riveAlignment = [self riveAlignment:alignment];
+    auto sf = 1.0f;
+    if (riveFit == rive::Fit::layout && artboardRect.size.width != 0)
+    {
+        sf = frame.width() / artboardRect.size.width;
+    }
+
+    rive::Mat2D forward =
+        rive::computeAlignment(riveFit, riveAlignment, frame, content, sf);
+
+    return CGAffineTransformMake(
+        forward[0], forward[1], forward[2], forward[3], forward[4], forward[5]);
 }
 
 @end

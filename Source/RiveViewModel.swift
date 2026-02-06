@@ -45,6 +45,9 @@ import Combine
     // TODO: could be a weak ref, need to look at this in more detail.
     open private(set) var riveView: RiveView?
     private var defaultModel: RiveModelBuffer!
+#if canImport(UIKit)
+    private var pendingTextInputs: [RiveTextInputHandle] = []
+#endif
 
     @objc public init(
         _ model: RiveModel,
@@ -171,6 +174,9 @@ import Combine
         didSet {
             if let model = riveModel {
                 try! riveView?.setModel(model, autoPlay: autoPlay)
+#if canImport(UIKit)
+                attachPendingTextInputsIfPossible()
+#endif
             }
         }
     }
@@ -537,6 +543,42 @@ import Combine
         #endif
     }
 
+#if canImport(UIKit)
+    /// Convenience: binds a native overlay text input to a `TextValueRun`.
+    @MainActor
+    @discardableResult
+    public func bindTextInput(_ binding: RiveTextInputBinding) throws -> RiveTextInputHandle {
+        if let view = riveView {
+            return try view.bindTextInput(binding)
+        }
+
+        let handle = RiveTextInputHandle(binding: binding)
+        pendingTextInputs.append(handle)
+        return handle
+    }
+
+    private func attachPendingTextInputsIfPossible() {
+        guard let view = riveView else { return }
+        guard !pendingTextInputs.isEmpty else { return }
+
+        let pending = pendingTextInputs
+        pendingTextInputs.removeAll()
+
+        Task { @MainActor [weak self, weak view] in
+            guard let self, let view else { return }
+            var remaining: [RiveTextInputHandle] = []
+            for handle in pending {
+                do {
+                    try view.attachTextInput(handle)
+                } catch {
+                    remaining.append(handle)
+                }
+            }
+            self.pendingTextInputs = remaining
+        }
+    }
+#endif
+
     // TODO: Replace this with a more robust structure of the file's contents
     @objc open func artboardNames() -> [String] {
         return riveModel?.riveFile.artboardNames() ?? []
@@ -590,6 +632,9 @@ import Combine
         riveView!.alignment = alignment
         riveView!.layoutScaleFactor = layoutScaleFactor
         riveView!.forwardsListenerEvents = forwardsListenerEvents
+#if canImport(UIKit)
+        attachPendingTextInputsIfPossible()
+#endif
     }
     
     /// Stops maintaining a connection to any `RiveView`

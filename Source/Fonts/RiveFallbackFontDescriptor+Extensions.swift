@@ -7,6 +7,9 @@
 //
 
 import Foundation
+#if canImport(CoreText)
+import CoreText
+#endif
 #if os(iOS) || os(visionOS) || os(tvOS)
 import UIKit
 public typealias RiveNativeFont = UIFont
@@ -247,5 +250,67 @@ extension RiveNativeFont: RiveFontWidthProvider {
 
         let calculatedWidth = (defaultWidth + (defaultWidth * width)).rounded(.toNearestOrAwayFromZero)
         return Int(calculatedWidth)
+    }
+}
+
+// MARK: - Font Asset Registry (UIKit Overlay Text Input)
+
+/// A lightweight registry that maps a Rive file asset key (currently the
+/// runtime `FileAsset::uniqueName()`) to a CoreText-registered PostScript name.
+///
+/// This enables UIKit text inputs (UITextField/UITextView) to render using the
+/// exact same font face that a `.riv` file embeds, by registering that font
+/// data at runtime via CoreText.
+@objc public final class RiveFontAssetRegistry: NSObject {
+    private static let lock = NSLock()
+    private static var postScriptNamesByAssetKey: [String: String] = [:]
+
+    /// Registers a font (TTF/OTF) with CoreText and associates it with a given
+    /// asset key.
+    ///
+    /// - Important: This must not change Rive's asset loading behavior. Callers
+    /// should register opportunistically while still allowing Rive to decode
+    /// the font for its own renderer.
+    @objc(registerFontWithAssetKey:data:)
+    public static func registerFont(assetKey: NSString, data: NSData) -> NSString? {
+        let key = assetKey as String
+        guard !key.isEmpty else { return nil }
+        guard data.length > 0 else { return nil }
+
+        lock.lock()
+        if let existing = postScriptNamesByAssetKey[key] {
+            lock.unlock()
+            return existing as NSString
+        }
+        lock.unlock()
+
+        guard let provider = CGDataProvider(data: data as CFData) else { return nil }
+        guard let cgFont = CGFont(provider) else { return nil }
+        guard let postScriptName = cgFont.postScriptName as String? else { return nil }
+
+        // Best-effort: registration may fail if already registered; the name is
+        // still useful for `UIFont(name:size:)`.
+        #if canImport(CoreText)
+        var error: Unmanaged<CFError>?
+        _ = CTFontManagerRegisterGraphicsFont(cgFont, &error)
+        #endif
+
+        lock.lock()
+        postScriptNamesByAssetKey[key] = postScriptName
+        lock.unlock()
+
+        return postScriptName as NSString
+    }
+
+    @objc(postScriptNameForAssetKey:)
+    public static func postScriptName(forAssetKey assetKey: NSString) -> NSString? {
+        let key = assetKey as String
+        guard !key.isEmpty else { return nil }
+
+        lock.lock()
+        let name = postScriptNamesByAssetKey[key]
+        lock.unlock()
+
+        return name as NSString?
     }
 }

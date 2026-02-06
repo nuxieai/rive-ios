@@ -41,6 +41,9 @@
                     if ([asset isKindOfClass:[RiveFontAsset class]])
                     {
                         RiveFontAsset* fontAsset = (RiveFontAsset*)asset;
+                        // Register the font for UIKit usage (text input overlays).
+                        (void)[RiveFontAssetRegistry registerFontWithAssetKey:[fontAsset uniqueName]
+                                                                         data:data];
                         [fontAsset font:[factory decodeFont:data]];
                         [RiveLogger logFontAssetLoad:fontAsset fromURL:URL];
                         return;
