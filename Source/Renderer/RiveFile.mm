@@ -8,6 +8,7 @@
 
 #import <Rive.h>
 #import <RivePrivateHeaders.h>
+#import <RiveScriptRuntime.h>
 #import <RenderContext.h>
 #import <RenderContextManager.h>
 #import <RiveFileAssetLoader.h>
@@ -16,6 +17,10 @@
 
 #import <FileAssetLoaderAdapter.hpp>
 
+@interface RiveScriptRuntime ()
+- (rive::ScriptingVM*)scriptingVMForFactory:(rive::Factory*)factory;
+@end
+
 /*
  * RiveFile
  */
@@ -23,6 +28,7 @@
 {
     rive::rcp<rive::File> riveFile;
     rive::rcp<rive::FileAssetLoader> fileAssetLoader;
+    RiveScriptRuntime* scriptRuntime;
     RenderContext* _renderContext;
     FallbackFileAssetLoader* _fallbackLoader;
 }
@@ -149,6 +155,54 @@
     return nil;
 }
 
+- (nullable instancetype)initWithBytes:(UInt8*)bytes
+                            byteLength:(UInt64)length
+                               loadCdn:(bool)cdn
+                     customAssetLoader:(LoadAsset)customAssetLoader
+                         scriptRuntime:(RiveScriptRuntime*)runtime
+                                 error:(NSError**)error
+{
+    if (self = [super init])
+    {
+        BOOL ok = [self import:bytes
+                    byteLength:length
+                       loadCdn:cdn
+             customAssetLoader:customAssetLoader
+                 scriptRuntime:runtime
+                         error:error];
+        if (!ok)
+        {
+            return nil;
+        }
+        self.isLoaded = true;
+        return self;
+    }
+    return nil;
+}
+
+- (nullable instancetype)initWithBytes:(UInt8*)bytes
+                            byteLength:(UInt64)length
+                               loadCdn:(bool)cdn
+                         scriptRuntime:(RiveScriptRuntime*)runtime
+                                 error:(NSError**)error
+{
+    if (self = [super init])
+    {
+        BOOL ok = [self import:bytes
+                    byteLength:length
+                       loadCdn:cdn
+                 scriptRuntime:runtime
+                         error:error];
+        if (!ok)
+        {
+            return nil;
+        }
+        self.isLoaded = true;
+        return self;
+    }
+    return nil;
+}
+
 - (nullable instancetype)initWithData:(NSData*)data
                               loadCdn:(bool)cdn
                                 error:(NSError**)error
@@ -169,6 +223,34 @@
                     byteLength:data.length
                        loadCdn:cdn
              customAssetLoader:customAssetLoader
+                         error:error];
+}
+
+- (nullable instancetype)initWithData:(NSData*)data
+                              loadCdn:(bool)cdn
+                    customAssetLoader:(LoadAsset)customAssetLoader
+                        scriptRuntime:(RiveScriptRuntime*)runtime
+                                error:(NSError**)error
+{
+    UInt8* bytes = (UInt8*)[data bytes];
+    return [self initWithBytes:bytes
+                    byteLength:data.length
+                       loadCdn:cdn
+             customAssetLoader:customAssetLoader
+                 scriptRuntime:runtime
+                         error:error];
+}
+
+- (nullable instancetype)initWithData:(NSData*)data
+                              loadCdn:(bool)cdn
+                        scriptRuntime:(RiveScriptRuntime*)runtime
+                                error:(NSError**)error
+{
+    UInt8* bytes = (UInt8*)[data bytes];
+    return [self initWithBytes:bytes
+                    byteLength:data.length
+                       loadCdn:cdn
+                 scriptRuntime:runtime
                          error:error];
 }
 
@@ -351,10 +433,43 @@
         }
                     error:error];
 }
+
+- (BOOL)import:(UInt8*)bytes
+    byteLength:(UInt64)length
+       loadCdn:(bool)loadCdn
+    scriptRuntime:(RiveScriptRuntime*)runtime
+         error:(NSError**)error
+{
+    return [self import:bytes
+             byteLength:length
+                loadCdn:loadCdn
+      customAssetLoader:^bool(
+          RiveFileAsset* asset, NSData* data, RiveFactory* factory) {
+        return false;
+      }
+          scriptRuntime:runtime
+                  error:error];
+}
+
 - (BOOL)import:(UInt8*)bytes
            byteLength:(UInt64)length
               loadCdn:(bool)loadCdn
     customAssetLoader:(LoadAsset)custom
+                error:(NSError**)error
+{
+    return [self import:bytes
+             byteLength:length
+                loadCdn:loadCdn
+      customAssetLoader:custom
+          scriptRuntime:nil
+                  error:error];
+}
+
+- (BOOL)import:(UInt8*)bytes
+           byteLength:(UInt64)length
+              loadCdn:(bool)loadCdn
+    customAssetLoader:(LoadAsset)custom
+        scriptRuntime:(RiveScriptRuntime*)runtime
                 error:(NSError**)error
 {
     rive::ImportResult result;
@@ -380,11 +495,18 @@
     fileAssetLoader =
         rive::make_rcp<rive::FileAssetLoaderAdapter>(fallbackLoader);
 
-    auto file = rive::File::import(
-        rive::Span(bytes, length), factory, &result, fileAssetLoader.get());
+    rive::ScriptingVM* scriptingVM =
+        runtime == nil ? nullptr : [runtime scriptingVMForFactory:factory];
+
+    auto file = rive::File::import(rive::Span(bytes, length),
+                                   factory,
+                                   &result,
+                                   fileAssetLoader.get(),
+                                   scriptingVM);
     if (result == rive::ImportResult::success)
     {
         riveFile = file;
+        scriptRuntime = runtime;
         return true;
     }
 

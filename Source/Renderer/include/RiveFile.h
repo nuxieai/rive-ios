@@ -19,6 +19,7 @@ NS_ASSUME_NONNULL_BEGIN
 @class RiveFactory;
 @class RiveDataBindingViewModel;
 @class RiveBindableArtboard;
+@class RiveScriptRuntime;
 typedef bool (^LoadAsset)(RiveFileAsset* asset,
                           NSData* data,
                           RiveFactory* factory);
@@ -58,6 +59,19 @@ typedef bool (^LoadAsset)(RiveFileAsset* asset,
                                loadCdn:(bool)cdn
                      customAssetLoader:(LoadAsset)customAssetLoader
                                  error:(NSError**)error;
+- (nullable instancetype)initWithBytes:(UInt8*)bytes
+                            byteLength:(UInt64)length
+                               loadCdn:(bool)cdn
+                     customAssetLoader:(LoadAsset)customAssetLoader
+                         scriptRuntime:
+                             (nullable RiveScriptRuntime*)scriptRuntime
+                                 error:(NSError**)error;
+- (nullable instancetype)initWithBytes:(UInt8*)bytes
+                            byteLength:(UInt64)length
+                               loadCdn:(bool)cdn
+                         scriptRuntime:
+                             (nullable RiveScriptRuntime*)scriptRuntime
+                                 error:(NSError**)error;
 
 - (nullable instancetype)initWithData:(NSData*)bytes
                               loadCdn:(bool)cdn
@@ -65,6 +79,17 @@ typedef bool (^LoadAsset)(RiveFileAsset* asset,
 - (nullable instancetype)initWithData:(NSData*)bytes
                               loadCdn:(bool)cdn
                     customAssetLoader:(LoadAsset)customAssetLoader
+                                error:(NSError**)error;
+- (nullable instancetype)initWithData:(NSData*)bytes
+                              loadCdn:(bool)cdn
+                    customAssetLoader:(LoadAsset)customAssetLoader
+                        scriptRuntime:
+                            (nullable RiveScriptRuntime*)scriptRuntime
+                                error:(NSError**)error;
+- (nullable instancetype)initWithData:(NSData*)bytes
+                              loadCdn:(bool)cdn
+                        scriptRuntime:
+                            (nullable RiveScriptRuntime*)scriptRuntime
                                 error:(NSError**)error;
 
 - (nullable instancetype)initWithResource:(NSString*)resourceName

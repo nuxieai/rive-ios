@@ -13,6 +13,7 @@
 #import <CoreGraphics/CoreGraphics.h>
 
 #import <RiveRuntime/RiveFile.h>
+#import <RiveRuntime/RiveScriptRuntime.h>
 #import <RiveRuntime/RiveArtboard.h>
 #import <RiveRuntime/RiveBindableArtboard.h>
 #import <RiveRuntime/RiveSMIInput.h>
