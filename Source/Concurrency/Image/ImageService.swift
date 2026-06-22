@@ -1,0 +1,164 @@
+//
+//  ImageService.swift
+//  RiveRuntime
+//
+//  Created by David Skuza on 12/2/25.
+//  Copyright © 2025 Rive. All rights reserved.
+//
+
+import Foundation
+
+/// A service class that manages image decoding operations and coordinates with the command queue.
+///
+/// Implements `RenderImageListener` to receive callbacks from the command queue. Manages continuations
+/// for async operations, storing them by request ID and resuming them when listener callbacks
+/// are invoked. All command queue operations must be performed on the main thread (either marked
+/// `@MainActor` or dispatched to the main queue). Listener callbacks are dispatched to the
+/// main actor to safely access continuations.
+///
+/// All continuation-based methods are wrapped with `withTaskCancellationHandler` because
+/// `withCheckedThrowingContinuation` does not auto-resume on task cancellation. Without
+/// explicit handling, a cancelled task leaks its continuation indefinitely.
+@MainActor
+final class ImageService: NSObject, RenderImageListener {
+    private let dependencies: Dependencies
+
+    /// A dictionary mapping request IDs to continuations for async operations.
+    ///
+    /// Continuations are stored when `decodeImage` is called and resumed when
+    /// `onRenderImageDecoded` or `onRenderImageError` is called. Access must be on the main thread.
+    private var continuations: [UInt64: CheckedContinuation<UInt64, Error>] = [:]
+
+    init(dependencies: Dependencies) {
+        self.dependencies = dependencies
+    }
+
+    private func beginImmediateRequest(_ requestID: UInt64) {
+        dependencies.messageGate.processMessagesImmediately(requestID: requestID)
+    }
+
+    private func finishImmediateRequest(_ requestID: UInt64) {
+        dependencies.messageGate.callbackProcessed(requestID: requestID)
+    }
+
+    /// Wraps a continuation-based command queue operation with cancellation support.
+    private func withCancellableContinuation(
+        cancelledError: Error,
+        operation: @escaping (UInt64) -> Void
+    ) async throws -> UInt64 {
+        try Task.checkCancellation()
+        let requestID = dependencies.commandQueue.nextRequestID
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                continuations[requestID] = continuation
+                beginImmediateRequest(requestID)
+                operation(requestID)
+            }
+        } onCancel: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                if let continuation = self.continuations.removeValue(forKey: requestID) {
+                    self.finishImmediateRequest(requestID)
+                    continuation.resume(throwing: cancelledError)
+                }
+            }
+        }
+    }
+
+    /// Decodes image data into an image handle.
+    ///
+    /// The continuation is resumed when `onRenderImageDecoded` or `onRenderImageError` is called.
+    ///
+    /// - Parameter data: The image data to decode
+    /// - Returns: An image handle that can be used to reference the decoded image
+    /// - Throws: `ImageError.failedDecoding` if the image data cannot be decoded
+    func decodeImage(from data: Data) async throws -> Image.ImageHandle {
+        RiveLog.debug(tag: .image, "[Image] Decoding image data (\(data.count) bytes)")
+        return try await withCancellableContinuation(cancelledError: ImageError.cancelled) { requestID in
+            self.dependencies.commandQueue.decodeImage(data, listener: self, requestID: requestID)
+        }
+    }
+
+    /// Deletes an image via the command queue.
+    ///
+    /// The continuation is resumed when `onRenderImageDeleted` is called.
+    ///
+    /// - Parameter renderImage: The image handle to delete
+    /// - Returns: The image handle that was deleted
+    @MainActor
+    func deleteImage(_ renderImage: Image.ImageHandle) async throws -> Image.ImageHandle {
+        RiveLog.debug(tag: .image, "[Image] Deleting image")
+        return try await withCancellableContinuation(cancelledError: ImageError.cancelled) { requestID in
+            self.dependencies.commandQueue.deleteImage(renderImage, requestID: requestID)
+        }
+    }
+
+    /// Deletes an image listener via the command queue.
+    ///
+    /// - Parameter renderImage: The image handle whose listener should be removed
+    @MainActor
+    func deleteImageListener(_ renderImage: Image.ImageHandle) {
+        dependencies.commandQueue.deleteImageListener(renderImage)
+    }
+
+    /// Called when image decoding completes successfully.
+    ///
+    /// Listener callback invoked by the command server. Resumes the continuation with the image handle.
+    nonisolated func onRenderImageDecoded(_ renderImageHandle: UInt64, requestID: UInt64) {
+        Task { @MainActor in
+            finishImmediateRequest(requestID)
+            guard let continuation = continuations.removeValue(forKey: requestID) else {
+                return
+            }
+
+            RiveLog.debug(tag: .image, "[Image] Decoded image")
+            continuation.resume(returning: renderImageHandle)
+        }
+    }
+
+    /// Called when image decoding encounters an error.
+    ///
+    /// Listener callback invoked by the command server. Resumes the continuation with an `ImageError`.
+    nonisolated func onRenderImageError(_ renderImageHandle: UInt64, requestID: UInt64, message: String) {
+        Task { @MainActor in
+            finishImmediateRequest(requestID)
+            guard let continuation = continuations.removeValue(forKey: requestID) else {
+                return
+            }
+
+            RiveLog.error(tag: .image, "[Image] Failed to decode image: \(message)")
+            continuation.resume(throwing: ImageError.failedDecoding(message))
+        }
+    }
+
+    /// Called when an image is deleted.
+    ///
+    /// Listener callback invoked by the command server. Resumes the continuation with the image handle.
+    nonisolated func onRenderImageDeleted(_ renderImageHandle: UInt64, requestID: UInt64) {
+        Task { @MainActor in
+            finishImmediateRequest(requestID)
+            guard let continuation = continuations.removeValue(forKey: requestID) else {
+                return
+            }
+
+            RiveLog.debug(tag: .image, "[Image] Deleted image")
+            continuation.resume(returning: renderImageHandle)
+        }
+    }
+}
+
+extension ImageService {
+    /// Container for all dependencies required by the image service.
+    struct Dependencies {
+        /// The command queue used to send image-related commands to the C++ runtime.
+        /// The service registers itself as a `RenderImageListener` observer when calling command
+        /// queue methods. All operations must be performed on the main thread.
+        let commandQueue: CommandQueueProtocol
+        let messageGate: CommandQueueMessageGate
+
+        init(commandQueue: CommandQueueProtocol, messageGate: CommandQueueMessageGate) {
+            self.commandQueue = commandQueue
+            self.messageGate = messageGate
+        }
+    }
+}

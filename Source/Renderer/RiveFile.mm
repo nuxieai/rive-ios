@@ -8,6 +8,7 @@
 
 #import <Rive.h>
 #import <RivePrivateHeaders.h>
+#import <RiveNuxieScriptingBridge.h>
 #import <RenderContext.h>
 #import <RenderContextManager.h>
 #import <RiveFileAssetLoader.h>
@@ -16,6 +17,12 @@
 
 #import <FileAssetLoaderAdapter.hpp>
 
+#include "rive/lua/scripting_vm.hpp"
+
+@interface RiveNuxieScriptingBridge ()
+- (rive::ScriptingVM*)scriptingVMForFactory:(rive::Factory*)factory;
+@end
+
 /*
  * RiveFile
  */
@@ -23,6 +30,7 @@
 {
     rive::rcp<rive::File> riveFile;
     rive::rcp<rive::FileAssetLoader> fileAssetLoader;
+    RiveNuxieScriptingBridge* nuxieScriptingBridge;
     RenderContext* _renderContext;
 }
 
@@ -148,6 +156,54 @@
     return nil;
 }
 
+- (nullable instancetype)initWithBytes:(UInt8*)bytes
+                            byteLength:(UInt64)length
+                               loadCdn:(bool)cdn
+                     customAssetLoader:(LoadAsset)customAssetLoader
+                  nuxieScriptingBridge:(RiveNuxieScriptingBridge*)bridge
+                                error:(NSError**)error
+{
+    if (self = [super init])
+    {
+        BOOL ok = [self import:bytes
+                    byteLength:length
+                       loadCdn:cdn
+             customAssetLoader:customAssetLoader
+          nuxieScriptingBridge:bridge
+                         error:error];
+        if (!ok)
+        {
+            return nil;
+        }
+        self.isLoaded = true;
+        return self;
+    }
+    return nil;
+}
+
+- (nullable instancetype)initWithBytes:(UInt8*)bytes
+                            byteLength:(UInt64)length
+                               loadCdn:(bool)cdn
+                  nuxieScriptingBridge:(RiveNuxieScriptingBridge*)bridge
+                                error:(NSError**)error
+{
+    if (self = [super init])
+    {
+        BOOL ok = [self import:bytes
+                    byteLength:length
+                       loadCdn:cdn
+          nuxieScriptingBridge:bridge
+                         error:error];
+        if (!ok)
+        {
+            return nil;
+        }
+        self.isLoaded = true;
+        return self;
+    }
+    return nil;
+}
+
 - (nullable instancetype)initWithData:(NSData*)data
                               loadCdn:(bool)cdn
                                 error:(NSError**)error
@@ -168,6 +224,34 @@
                     byteLength:data.length
                        loadCdn:cdn
              customAssetLoader:customAssetLoader
+                         error:error];
+}
+
+- (nullable instancetype)initWithData:(NSData*)data
+                              loadCdn:(bool)cdn
+                    customAssetLoader:(LoadAsset)customAssetLoader
+                 nuxieScriptingBridge:(RiveNuxieScriptingBridge*)bridge
+                                error:(NSError**)error
+{
+    UInt8* bytes = (UInt8*)[data bytes];
+    return [self initWithBytes:bytes
+                    byteLength:data.length
+                       loadCdn:cdn
+             customAssetLoader:customAssetLoader
+          nuxieScriptingBridge:bridge
+                         error:error];
+}
+
+- (nullable instancetype)initWithData:(NSData*)data
+                              loadCdn:(bool)cdn
+                 nuxieScriptingBridge:(RiveNuxieScriptingBridge*)bridge
+                                error:(NSError**)error
+{
+    UInt8* bytes = (UInt8*)[data bytes];
+    return [self initWithBytes:bytes
+                    byteLength:data.length
+                       loadCdn:cdn
+          nuxieScriptingBridge:bridge
                          error:error];
 }
 
@@ -350,10 +434,43 @@
         }
                     error:error];
 }
+
+- (BOOL)import:(UInt8*)bytes
+    byteLength:(UInt64)length
+       loadCdn:(bool)loadCdn
+    nuxieScriptingBridge:(RiveNuxieScriptingBridge*)bridge
+         error:(NSError**)error
+{
+    return [self import:bytes
+             byteLength:length
+                loadCdn:loadCdn
+      customAssetLoader:^bool(
+          RiveFileAsset* asset, NSData* data, RiveFactory* factory) {
+        return false;
+      }
+    nuxieScriptingBridge:bridge
+                  error:error];
+}
+
 - (BOOL)import:(UInt8*)bytes
            byteLength:(UInt64)length
               loadCdn:(bool)loadCdn
     customAssetLoader:(LoadAsset)custom
+                error:(NSError**)error
+{
+    return [self import:bytes
+             byteLength:length
+                loadCdn:loadCdn
+      customAssetLoader:custom
+    nuxieScriptingBridge:nil
+                  error:error];
+}
+
+- (BOOL)import:(UInt8*)bytes
+           byteLength:(UInt64)length
+              loadCdn:(bool)loadCdn
+    customAssetLoader:(LoadAsset)custom
+  nuxieScriptingBridge:(RiveNuxieScriptingBridge*)bridge
                 error:(NSError**)error
 {
     rive::ImportResult result;
@@ -377,11 +494,19 @@
     fileAssetLoader =
         rive::make_rcp<rive::FileAssetLoaderAdapter>(fallbackLoader);
 
+    rive::ScriptingVM* scriptingVM =
+        bridge == nil ? nullptr : [bridge scriptingVMForFactory:factory];
+
     auto file = rive::File::import(
-        rive::Span(bytes, length), factory, &result, fileAssetLoader.get());
+        rive::Span(bytes, length),
+        factory,
+        &result,
+        fileAssetLoader.get(),
+        scriptingVM);
     if (result == rive::ImportResult::success)
     {
         riveFile = file;
+        nuxieScriptingBridge = bridge;
         return true;
     }
 
@@ -425,6 +550,15 @@
         }
     }
     return false;
+}
+
+- (NSArray<RiveNuxieScriptEvent*>*)drainNuxieScriptEvents
+{
+    if (nuxieScriptingBridge == nil)
+    {
+        return @[];
+    }
+    return [nuxieScriptingBridge drainTriggerEvents];
 }
 
 - (RiveArtboard*)artboard:(NSError**)error

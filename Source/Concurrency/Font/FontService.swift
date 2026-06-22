@@ -1,0 +1,165 @@
+//
+//  FontService.swift
+//  RiveRuntime
+//
+//  Created by David Skuza on 12/2/25.
+//  Copyright © 2025 Rive. All rights reserved.
+//
+
+import Foundation
+
+/// A service class that manages font decoding operations and coordinates with the command queue.
+///
+/// Implements `FontListener` to receive callbacks from the command queue. Manages continuations
+/// for async operations, storing them by request ID and resuming them when listener callbacks
+/// are invoked. All command queue operations must be performed on the main thread (either marked
+/// `@MainActor` or dispatched to the main queue). Listener callbacks are dispatched to the
+/// main actor to safely access continuations.
+///
+/// All continuation-based methods are wrapped with `withTaskCancellationHandler` because
+/// `withCheckedThrowingContinuation` does not auto-resume on task cancellation. Without
+/// explicit handling, a cancelled task leaks its continuation indefinitely.
+@MainActor
+final class FontService: NSObject, FontListener {
+    private let dependencies: Dependencies
+
+    /// A dictionary mapping request IDs to continuations for async operations.
+    ///
+    /// Continuations are stored when `decodeFont` is called and resumed when
+    /// `onFontDecoded` or `onFontError` is called. Access must be on the main thread.
+    private var continuations: [UInt64: CheckedContinuation<UInt64, Error>] = [:]
+
+    init(dependencies: Dependencies) {
+        self.dependencies = dependencies
+    }
+
+    private func beginImmediateRequest(_ requestID: UInt64) {
+        dependencies.messageGate.processMessagesImmediately(requestID: requestID)
+    }
+
+    private func finishImmediateRequest(_ requestID: UInt64) {
+        dependencies.messageGate.callbackProcessed(requestID: requestID)
+    }
+
+    /// Wraps a continuation-based command queue operation with cancellation support.
+    private func withCancellableContinuation(
+        cancelledError: Error,
+        operation: @escaping (UInt64) -> Void
+    ) async throws -> UInt64 {
+        try Task.checkCancellation()
+        let requestID = dependencies.commandQueue.nextRequestID
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                continuations[requestID] = continuation
+                beginImmediateRequest(requestID)
+                operation(requestID)
+            }
+        } onCancel: { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                if let continuation = self.continuations.removeValue(forKey: requestID) {
+                    self.finishImmediateRequest(requestID)
+                    continuation.resume(throwing: cancelledError)
+                }
+            }
+        }
+    }
+
+    /// Decodes font data into a font handle.
+    ///
+    /// The continuation is resumed when `onFontDecoded` or `onFontError` is called.
+    ///
+    /// - Parameter data: The font data to decode
+    /// - Returns: A font handle that can be used to reference the decoded font
+    /// - Throws: `FontError.failedDecoding` if the font data cannot be decoded
+    func decodeFont(from data: Data) async throws -> Font.FontHandle {
+        RiveLog.debug(tag: .font, "[Font] Decoding font data (\(data.count) bytes)")
+        return try await withCancellableContinuation(cancelledError: FontError.cancelled) { requestID in
+            self.dependencies.commandQueue.decodeFont(data, listener: self, requestID: requestID)
+        }
+    }
+
+    /// Deletes a font via the command queue.
+    ///
+    /// The continuation is resumed when `onFontDeleted` is called.
+    ///
+    /// - Parameter fontHandle: The font handle to delete
+    /// - Returns: The font handle that was deleted
+    @MainActor
+    func deleteFont(_ fontHandle: Font.FontHandle) async throws -> Font.FontHandle {
+        RiveLog.debug(tag: .font, "[Font] Deleting font")
+        return try await withCancellableContinuation(cancelledError: FontError.cancelled) { requestID in
+            self.dependencies.commandQueue.deleteFont(fontHandle, requestID: requestID)
+        }
+    }
+
+    /// Deletes a font listener via the command queue.
+    ///
+    /// - Parameter fontHandle: The font handle whose listener should be removed
+    @MainActor
+    func deleteFontListener(_ fontHandle: Font.FontHandle) {
+        dependencies.commandQueue.deleteFontListener(fontHandle)
+    }
+
+    /// Called when font decoding completes successfully.
+    ///
+    /// Listener callback invoked by the command server. Resumes the continuation with the font handle.
+    nonisolated func onFontDecoded(_ fontHandle: UInt64, requestID: UInt64) {
+        Task { @MainActor in
+            finishImmediateRequest(requestID)
+            guard let continuation = continuations.removeValue(forKey: requestID) else {
+                return
+            }
+
+            RiveLog.debug(tag: .font, "[Font] Decoded font")
+            continuation.resume(returning: fontHandle)
+        }
+    }
+
+    /// Called when font decoding encounters an error.
+    ///
+    /// Listener callback invoked by the command server. Resumes the continuation with a `FontError`.
+    nonisolated func onFontError(_ fontHandle: UInt64, requestID: UInt64, message: String) {
+        Task { @MainActor in
+            finishImmediateRequest(requestID)
+            guard let continuation = continuations.removeValue(forKey: requestID) else {
+                return
+            }
+
+            RiveLog.error(tag: .font, "[Font] Failed to decode font: \(message)")
+            continuation.resume(throwing: FontError.failedDecoding(message))
+        }
+    }
+
+    /// Called when a font is deleted.
+    ///
+    /// Listener callback invoked by the command server. Resumes the continuation with the font handle.
+    nonisolated func onFontDeleted(_ fontHandle: UInt64, requestID: UInt64) {
+        Task { @MainActor in
+            finishImmediateRequest(requestID)
+            guard let continuation = continuations.removeValue(forKey: requestID) else {
+                return
+            }
+
+            RiveLog.debug(tag: .font, "[Font] Deleted font")
+            continuation.resume(returning: fontHandle)
+        }
+    }
+}
+
+extension FontService {
+    /// Container for all dependencies required by the font service.
+    struct Dependencies {
+        /// The command queue used to send font-related commands to the C++ runtime.
+        /// The service registers itself as a `FontListener` observer when calling command
+        /// queue methods. All operations must be performed on the main thread.
+        let commandQueue: CommandQueueProtocol
+        let messageGate: CommandQueueMessageGate
+
+        init(commandQueue: CommandQueueProtocol, messageGate: CommandQueueMessageGate) {
+            self.commandQueue = commandQueue
+            self.messageGate = messageGate
+        }
+    }
+}
+
