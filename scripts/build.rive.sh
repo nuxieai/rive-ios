@@ -113,6 +113,33 @@ make_dependency_directories() {
     mkdir -p $DEV_SCRIPT_DIR/../dependencies/includes/renderer
 }
 
+copy_runtime_headers() {
+    cp -r $RIVE_RUNTIME_DIR/include $DEV_SCRIPT_DIR/../dependencies/includes/rive
+
+    local deps_dir
+    deps_dir=$DEV_SCRIPT_DIR/../dependencies
+
+    local luau_header
+    luau_header=$(find "$deps_dir" -path "$deps_dir/includes" -prune -o -path "*/VM/include/lua.h" -print -quit)
+    if [ -n "$luau_header" ]; then
+        local luau_include_dir
+        luau_include_dir=$(dirname "$luau_header")
+        rm -fr $DEV_SCRIPT_DIR/../dependencies/includes/luau
+        mkdir -p $DEV_SCRIPT_DIR/../dependencies/includes/luau
+        cp -r "$luau_include_dir"/. $DEV_SCRIPT_DIR/../dependencies/includes/luau
+    fi
+
+    local miniaudio_header
+    miniaudio_header=$(find "$deps_dir" -path "$deps_dir/includes" -prune -o -name "miniaudio.h" -print -quit)
+    if [ -n "$miniaudio_header" ]; then
+        local miniaudio_include_dir
+        miniaudio_include_dir=$(dirname "$miniaudio_header")
+        rm -fr $DEV_SCRIPT_DIR/../dependencies/includes/miniaudio
+        mkdir -p $DEV_SCRIPT_DIR/../dependencies/includes/miniaudio
+        cp -r "$miniaudio_include_dir"/. $DEV_SCRIPT_DIR/../dependencies/includes/miniaudio
+    fi
+}
+
 build_runtime() {
     # Build the rive runtime.
     RIVE_PREMAKE_ARGS="$RIVE_PREMAKE_ARGS" build_rive.sh --file=$RIVE_RUNTIME_DIR/premake5_v2.lua ios $1 $AUDIO_FLAG universal clean
@@ -123,7 +150,7 @@ build_runtime() {
     cp -r out/ios_universal_$1/libminiaudio.a $DEV_SCRIPT_DIR/../dependencies/$1/libminiaudio.a
     cp -r out/ios_universal_$1/librive.a $DEV_SCRIPT_DIR/../dependencies/$1/librive.a
     cp -r out/ios_universal_$1/libluau_vm.a $DEV_SCRIPT_DIR/../dependencies/$1/libluau_vm.a
-    cp -r $RIVE_RUNTIME_DIR/include $DEV_SCRIPT_DIR/../dependencies/includes/rive
+    copy_runtime_headers
 
     # Build rive_cg_renderer.
     pushd $RIVE_RUNTIME_DIR/cg_renderer
@@ -136,7 +163,7 @@ build_runtime() {
 
     # Build rive_pls_renderer.
     pushd $RIVE_PLS_DIR
-    premake5 --config=$1 --out=out/iphoneos_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --os=ios gmake2
+    premake5 --config=$1 --out=out/iphoneos_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --with_objc_exceptions --os=ios gmake2
     make -C out/iphoneos_$1 clean
     make -C out/iphoneos_$1 -j12 rive_pls_renderer
     popd
@@ -163,7 +190,7 @@ build_runtime_sim() {
     cp -r out/iossim_universal_$1/libminiaudio.a $DEV_SCRIPT_DIR/../dependencies/$1/libminiaudio_sim.a
     cp -r out/iossim_universal_$1/librive.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_sim.a
     cp -r out/iossim_universal_$1/libluau_vm.a $DEV_SCRIPT_DIR/../dependencies/$1/libluau_vm_sim.a
-    cp -r $RIVE_RUNTIME_DIR/include $DEV_SCRIPT_DIR/../dependencies/includes/rive
+    copy_runtime_headers
 
     # Build rive_cg_renderer.
     pushd $RIVE_RUNTIME_DIR/cg_renderer
@@ -177,7 +204,7 @@ build_runtime_sim() {
 
     # Build rive_pls_renderer.
     pushd $RIVE_PLS_DIR
-    premake5 --config=$1 --out=out/iphonesimulator_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --os=ios --variant=emulator gmake2
+    premake5 --config=$1 --out=out/iphonesimulator_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --with_objc_exceptions --os=ios --variant=emulator gmake2
     make -C out/iphonesimulator_$1 clean
     make -C out/iphonesimulator_$1 -j12 rive_pls_renderer
     popd
@@ -204,7 +231,7 @@ build_runtime_macosx() {
     cp -r out/universal_$1/libminiaudio.a $DEV_SCRIPT_DIR/../dependencies/$1/libminiaudio_macos.a
     cp -r out/universal_$1/librive.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_macos.a
     cp -r out/universal_$1/libluau_vm.a $DEV_SCRIPT_DIR/../dependencies/$1/libluau_vm_macos.a
-    cp -r $RIVE_RUNTIME_DIR/include $DEV_SCRIPT_DIR/../dependencies/includes/rive
+    copy_runtime_headers
 
     # Build rive_cg_renderer.
     pushd $RIVE_RUNTIME_DIR/cg_renderer
@@ -217,7 +244,7 @@ build_runtime_macosx() {
 
     # Build rive_pls_renderer.
     pushd $RIVE_PLS_DIR
-    premake5 --config=$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --os=macosx gmake2
+    premake5 --config=$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --with_objc_exceptions --os=macosx gmake2
     make -C out/$1 clean
     make -C out/$1 -j12 rive_pls_renderer
     popd
@@ -244,7 +271,7 @@ build_runtime_xros() {
     cp -r out/xros_$1/libminiaudio.a $DEV_SCRIPT_DIR/../dependencies/$1/libminiaudio_xros.a
     cp -r out/xros_$1/librive.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_xros.a
     cp -r out/xros_$1/libluau_vm.a $DEV_SCRIPT_DIR/../dependencies/$1/libluau_vm_xros.a
-    cp -r $RIVE_RUNTIME_DIR/include $DEV_SCRIPT_DIR/../dependencies/includes/rive
+    copy_runtime_headers
 
     # Build rive_cg_renderer.
     pushd $RIVE_RUNTIME_DIR/cg_renderer
@@ -257,7 +284,7 @@ build_runtime_xros() {
 
     # Build rive_pls_renderer.
     pushd $RIVE_PLS_DIR
-    premake5 --config=$1 --out=out/xros_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --os=ios --variant=xros gmake2
+    premake5 --config=$1 --out=out/xros_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --with_objc_exceptions --os=ios --variant=xros gmake2
     make -C out/xros_$1 clean
     make -C out/xros_$1 -j12 rive_pls_renderer
     popd
@@ -284,7 +311,7 @@ build_runtime_xrsimulator() {
     cp -r out/xrsimulator_universal_$1/libminiaudio.a $DEV_SCRIPT_DIR/../dependencies/$1/libminiaudio_xrsimulator.a
     cp -r out/xrsimulator_universal_$1/librive.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_xrsimulator.a
     cp -r out/xrsimulator_universal_$1/libluau_vm.a $DEV_SCRIPT_DIR/../dependencies/$1/libluau_vm_xrsimulator.a
-    cp -r $RIVE_RUNTIME_DIR/include $DEV_SCRIPT_DIR/../dependencies/includes/rive
+    copy_runtime_headers
 
     # Build rive_cg_renderer.
     pushd $RIVE_RUNTIME_DIR/cg_renderer
@@ -298,7 +325,7 @@ build_runtime_xrsimulator() {
 
     # Build rive_pls_renderer.
     pushd $RIVE_PLS_DIR
-    premake5 --config=$1 --out=out/xrsimulator_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --os=ios --variant=xrsimulator gmake2
+    premake5 --config=$1 --out=out/xrsimulator_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --with_objc_exceptions --os=ios --variant=xrsimulator gmake2
     make -C out/xrsimulator_$1 clean
     make -C out/xrsimulator_$1 -j12 rive_pls_renderer
     popd
@@ -324,7 +351,7 @@ build_runtime_appletvos() {
     cp -r out/appletvos_$1/libminiaudio.a $DEV_SCRIPT_DIR/../dependencies/$1/libminiaudio_appletvos.a
     cp -r out/appletvos_$1/librive.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_appletvos.a
     cp -r out/appletvos_$1/libluau_vm.a $DEV_SCRIPT_DIR/../dependencies/$1/libluau_vm_appletvos.a
-    cp -r $RIVE_RUNTIME_DIR/include $DEV_SCRIPT_DIR/../dependencies/includes/rive
+    copy_runtime_headers
 
     # Build rive_cg_renderer.
     pushd $RIVE_RUNTIME_DIR/cg_renderer
@@ -337,7 +364,7 @@ build_runtime_appletvos() {
 
     # Build rive_pls_renderer.
     pushd $RIVE_PLS_DIR
-    premake5 --config=$1 --out=out/appletvos_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --os=ios --variant=appletvos gmake2
+    premake5 --config=$1 --out=out/appletvos_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --with_objc_exceptions --os=ios --variant=appletvos gmake2
     make -C out/appletvos_$1 clean
     make -C out/appletvos_$1 -j12 rive_pls_renderer
     popd
@@ -365,7 +392,7 @@ build_runtime_appletvsimulator() {
     cp -r out/appletvsimulator_universal_$1/libminiaudio.a $DEV_SCRIPT_DIR/../dependencies/$1/libminiaudio_appletvsimulator.a
     cp -r out/appletvsimulator_universal_$1/librive.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_appletvsimulator.a
     cp -r out/appletvsimulator_universal_$1/libluau_vm.a $DEV_SCRIPT_DIR/../dependencies/$1/libluau_vm_appletvsimulator.a
-    cp -r $RIVE_RUNTIME_DIR/include $DEV_SCRIPT_DIR/../dependencies/includes/rive
+    copy_runtime_headers
 
     # Build rive_cg_renderer.
     pushd $RIVE_RUNTIME_DIR/cg_renderer
@@ -379,7 +406,7 @@ build_runtime_appletvsimulator() {
 
     # Build rive_pls_renderer.
     pushd $RIVE_PLS_DIR
-    premake5 --config=$1 --out=out/appletvsimulator_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --os=ios --variant=appletvsimulator gmake2
+    premake5 --config=$1 --out=out/appletvsimulator_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --with_objc_exceptions --os=ios --variant=appletvsimulator gmake2
     make -C out/appletvsimulator_$1 clean
     make -C out/appletvsimulator_$1 -j12 rive_pls_renderer
     popd
@@ -412,7 +439,7 @@ build_runtime_maccatalyst() {
         cp -r out/maccatalyst_${arch}_${config}/libminiaudio.a $DEV_SCRIPT_DIR/../dependencies/${config}/libminiaudio_maccatalyst_${arch}.a
         cp -r out/maccatalyst_${arch}_${config}/librive.a $DEV_SCRIPT_DIR/../dependencies/${config}/librive_maccatalyst_${arch}.a
         cp -r out/maccatalyst_${arch}_${config}/libluau_vm.a $DEV_SCRIPT_DIR/../dependencies/${config}/libluau_vm_maccatalyst_${arch}.a
-        cp -r $RIVE_RUNTIME_DIR/include $DEV_SCRIPT_DIR/../dependencies/includes/rive
+        copy_runtime_headers
 
         # Build rive_cg_renderer.
         pushd $RIVE_RUNTIME_DIR/cg_renderer
@@ -425,7 +452,7 @@ build_runtime_maccatalyst() {
 
         # Build rive_pls_renderer.
         pushd $RIVE_PLS_DIR
-        premake5 --config=${config} --out=out/maccatalyst_${arch}_${config} --arch=${arch} --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --os=macosx --variant=maccatalyst gmake2
+        premake5 --config=${config} --out=out/maccatalyst_${arch}_${config} --arch=${arch} --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --with_objc_exceptions --os=macosx --variant=maccatalyst gmake2
         make -C out/maccatalyst_${arch}_${config} clean
         make -C out/maccatalyst_${arch}_${config} -j12 rive_pls_renderer
         popd
