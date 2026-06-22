@@ -28,10 +28,12 @@
 		046FB7F4264EAA60000129B1 /* RiveLinearAnimationInstance.mm in Sources */ = {isa = PBXBuildFile; fileRef = 046FB7E4264EAA5F000129B1 /* RiveLinearAnimationInstance.mm */; };
 		046FB7F5264EAA60000129B1 /* RiveSMIInput.mm in Sources */ = {isa = PBXBuildFile; fileRef = 046FB7E5264EAA5F000129B1 /* RiveSMIInput.mm */; };
 		046FB7F7264EAA60000129B1 /* RiveFile.h in Headers */ = {isa = PBXBuildFile; fileRef = 046FB7E7264EAA5F000129B1 /* RiveFile.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		AA1000012F9A000000000001 /* RiveNuxieScriptingBridge.h in Headers */ = {isa = PBXBuildFile; fileRef = AA1000032F9A000000000001 /* RiveNuxieScriptingBridge.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		046FB7F8264EAA60000129B1 /* RiveStateMachineInstance.mm in Sources */ = {isa = PBXBuildFile; fileRef = 046FB7E8264EAA5F000129B1 /* RiveStateMachineInstance.mm */; };
 		046FB7FB264EAA61000129B1 /* RiveSMIInput.h in Headers */ = {isa = PBXBuildFile; fileRef = 046FB7EB264EAA60000129B1 /* RiveSMIInput.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		046FB7FC264EAA61000129B1 /* RiveArtboard.h in Headers */ = {isa = PBXBuildFile; fileRef = 046FB7EC264EAA60000129B1 /* RiveArtboard.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		046FB7FF264EAA61000129B1 /* RiveFile.mm in Sources */ = {isa = PBXBuildFile; fileRef = 046FB7EF264EAA60000129B1 /* RiveFile.mm */; };
+		AA1000022F9A000000000001 /* RiveNuxieScriptingBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = AA1000042F9A000000000001 /* RiveNuxieScriptingBridge.mm */; };
 		046FB800264EAA61000129B1 /* RiveStateMachineInstance.h in Headers */ = {isa = PBXBuildFile; fileRef = 046FB7F0264EAA60000129B1 /* RiveStateMachineInstance.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		04BE54042649403600427B39 /* shapes.riv in Resources */ = {isa = PBXBuildFile; fileRef = 04BE53F82649403500427B39 /* shapes.riv */; };
 		04BE54052649403600427B39 /* noartboard.riv in Resources */ = {isa = PBXBuildFile; fileRef = 04BE53F92649403500427B39 /* noartboard.riv */; };
@@ -175,10 +177,12 @@
 		046FB7E4264EAA5F000129B1 /* RiveLinearAnimationInstance.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = RiveLinearAnimationInstance.mm; sourceTree = "<group>"; };
 		046FB7E5264EAA5F000129B1 /* RiveSMIInput.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = RiveSMIInput.mm; sourceTree = "<group>"; };
 		046FB7E7264EAA5F000129B1 /* RiveFile.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RiveFile.h; sourceTree = "<group>"; };
+		AA1000032F9A000000000001 /* RiveNuxieScriptingBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RiveNuxieScriptingBridge.h; sourceTree = "<group>"; };
 		046FB7E8264EAA5F000129B1 /* RiveStateMachineInstance.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = RiveStateMachineInstance.mm; sourceTree = "<group>"; };
 		046FB7EB264EAA60000129B1 /* RiveSMIInput.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RiveSMIInput.h; sourceTree = "<group>"; };
 		046FB7EC264EAA60000129B1 /* RiveArtboard.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RiveArtboard.h; sourceTree = "<group>"; };
 		046FB7EF264EAA60000129B1 /* RiveFile.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = RiveFile.mm; sourceTree = "<group>"; };
+		AA1000042F9A000000000001 /* RiveNuxieScriptingBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = RiveNuxieScriptingBridge.mm; sourceTree = "<group>"; };
 		046FB7F0264EAA60000129B1 /* RiveStateMachineInstance.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RiveStateMachineInstance.h; sourceTree = "<group>"; };
 		04BE53F82649403500427B39 /* shapes.riv */ = {isa = PBXFileReference; lastKnownFileType = file; path = shapes.riv; sourceTree = "<group>"; };
 		04BE53F92649403500427B39 /* noartboard.riv */ = {isa = PBXFileReference; lastKnownFileType = file; path = noartboard.riv; sourceTree = "<group>"; };
@@ -354,6 +358,7 @@
 			children = (
 				C9C741F224FC510200EF9516 /* Rive.h */,
 				046FB7E7264EAA5F000129B1 /* RiveFile.h */,
+				AA1000032F9A000000000001 /* RiveNuxieScriptingBridge.h */,
 				046FB7EC264EAA60000129B1 /* RiveArtboard.h */,
 				2A7079342726277C00C035A1 /* rive_renderer_view.hh */,
 				046FB7E1264EAA5E000129B1 /* RiveLinearAnimationInstance.h */,
@@ -453,6 +458,7 @@
 				046FB801264EB632000129B1 /* include */,
 				C9C741F324FC510200EF9516 /* Rive.mm */,
 				046FB7EF264EAA60000129B1 /* RiveFile.mm */,
+				AA1000042F9A000000000001 /* RiveNuxieScriptingBridge.mm */,
 				046FB7E2264EAA5E000129B1 /* RiveArtboard.mm */,
 				2A707936272628AD00C035A1 /* rive_renderer_view.mm */,
 				046FB7E4264EAA5F000129B1 /* RiveLinearAnimationInstance.mm */,
@@ -625,6 +631,7 @@
 			files = (
 				C9C741F424FC510200EF9516 /* Rive.h in Headers */,
 				046FB7F7264EAA60000129B1 /* RiveFile.h in Headers */,
+				AA1000012F9A000000000001 /* RiveNuxieScriptingBridge.h in Headers */,
 				046FB7FC264EAA61000129B1 /* RiveArtboard.h in Headers */,
 				2A7079352726277C00C035A1 /* rive_renderer_view.hh in Headers */,
 				83DE4C932AA8DD9F00B88B72 /* RenderContextManager.h in Headers */,
@@ -834,6 +841,7 @@
 				F259E5872D35B91700B78FEF /* RiveDataBindingViewModel.mm in Sources */,
 				F21C3D1B2DDFCD93005F82F4 /* RiveRenderImage+Extensions.swift in Sources */,
 				046FB7FF264EAA61000129B1 /* RiveFile.mm in Sources */,
+				AA1000022F9A000000000001 /* RiveNuxieScriptingBridge.mm in Sources */,
 				046FB7F2264EAA60000129B1 /* RiveArtboard.mm in Sources */,
 				F2610DD22CA5B4C40090D50B /* RiveLogger+StateMachine.swift in Sources */,
 				046FB7F4264EAA60000129B1 /* RiveLinearAnimationInstance.mm in Sources */,
@@ -1036,6 +1044,8 @@
 				GCC_ENABLE_CPP_RTTI = NO;
 				"HEADER_SEARCH_PATHS[arch=*]" = (
 					dependencies/includes/rive/include,
+					dependencies/includes/luau,
+					dependencies/includes/miniaudio,
 					dependencies/includes/renderer/include,
 					dependencies/includes/cg_renderer/include,
 				);
@@ -1168,6 +1178,8 @@
 				GCC_ENABLE_CPP_RTTI = NO;
 				"HEADER_SEARCH_PATHS[arch=*]" = (
 					dependencies/includes/rive/include,
+					dependencies/includes/luau,
+					dependencies/includes/miniaudio,
 					dependencies/includes/renderer/include,
 					dependencies/includes/cg_renderer/include,
 				);
@@ -1288,7 +1300,11 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
-				"HEADER_SEARCH_PATHS[arch=*]" = dependencies/includes/rive/include;
+				"HEADER_SEARCH_PATHS[arch=*]" = (
+					dependencies/includes/rive/include,
+					dependencies/includes/luau,
+					dependencies/includes/miniaudio,
+				);
 				INFOPLIST_FILE = Tests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1316,7 +1332,11 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
-				"HEADER_SEARCH_PATHS[arch=*]" = dependencies/includes/rive/include;
+				"HEADER_SEARCH_PATHS[arch=*]" = (
+					dependencies/includes/rive/include,
+					dependencies/includes/luau,
+					dependencies/includes/miniaudio,
+				);
 				INFOPLIST_FILE = Tests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1426,6 +1446,8 @@
 				GCC_ENABLE_CPP_RTTI = NO;
 				"HEADER_SEARCH_PATHS[arch=*]" = (
 					dependencies/includes/rive/include,
+					dependencies/includes/luau,
+					dependencies/includes/miniaudio,
 					dependencies/includes/renderer/include,
 					dependencies/includes/cg_renderer/include,
 				);
@@ -1545,7 +1567,11 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
-				"HEADER_SEARCH_PATHS[arch=*]" = dependencies/includes/rive/include;
+				"HEADER_SEARCH_PATHS[arch=*]" = (
+					dependencies/includes/rive/include,
+					dependencies/includes/luau,
+					dependencies/includes/miniaudio,
+				);
 				INFOPLIST_FILE = Tests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1656,6 +1682,8 @@
 				GCC_ENABLE_CPP_RTTI = NO;
 				"HEADER_SEARCH_PATHS[arch=*]" = (
 					dependencies/includes/rive/include,
+					dependencies/includes/luau,
+					dependencies/includes/miniaudio,
 					dependencies/includes/renderer/include,
 					dependencies/includes/cg_renderer/include,
 				);
@@ -1774,7 +1802,11 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
-				"HEADER_SEARCH_PATHS[arch=*]" = dependencies/includes/rive/include;
+				"HEADER_SEARCH_PATHS[arch=*]" = (
+					dependencies/includes/rive/include,
+					dependencies/includes/luau,
+					dependencies/includes/miniaudio,
+				);
 				INFOPLIST_FILE = Tests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1885,6 +1917,8 @@
 				GCC_ENABLE_CPP_RTTI = NO;
 				"HEADER_SEARCH_PATHS[arch=*]" = (
 					dependencies/includes/rive/include,
+					dependencies/includes/luau,
+					dependencies/includes/miniaudio,
 					dependencies/includes/renderer/include,
 					dependencies/includes/cg_renderer/include,
 				);
@@ -2005,7 +2039,11 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_STYLE = Automatic;
-				"HEADER_SEARCH_PATHS[arch=*]" = dependencies/includes/rive/include;
+				"HEADER_SEARCH_PATHS[arch=*]" = (
+					dependencies/includes/rive/include,
+					dependencies/includes/luau,
+					dependencies/includes/miniaudio,
+				);
 				INFOPLIST_FILE = Tests/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

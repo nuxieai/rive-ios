@@ -113,6 +113,33 @@ make_dependency_directories() {
     mkdir -p $DEV_SCRIPT_DIR/../dependencies/includes/renderer
 }
 
+copy_runtime_headers() {
+    cp -r $RIVE_RUNTIME_DIR/include $DEV_SCRIPT_DIR/../dependencies/includes/rive
+
+    local deps_dir
+    deps_dir=$DEV_SCRIPT_DIR/../dependencies
+
+    local luau_header
+    luau_header=$(find "$deps_dir" -path "$deps_dir/includes" -prune -o -path "*/VM/include/lua.h" -print -quit)
+    if [ -n "$luau_header" ]; then
+        local luau_include_dir
+        luau_include_dir=$(dirname "$luau_header")
+        rm -fr $DEV_SCRIPT_DIR/../dependencies/includes/luau
+        mkdir -p $DEV_SCRIPT_DIR/../dependencies/includes/luau
+        cp -r "$luau_include_dir"/. $DEV_SCRIPT_DIR/../dependencies/includes/luau
+    fi
+
+    local miniaudio_header
+    miniaudio_header=$(find "$deps_dir" -path "$deps_dir/includes" -prune -o -name "miniaudio.h" -print -quit)
+    if [ -n "$miniaudio_header" ]; then
+        local miniaudio_include_dir
+        miniaudio_include_dir=$(dirname "$miniaudio_header")
+        rm -fr $DEV_SCRIPT_DIR/../dependencies/includes/miniaudio
+        mkdir -p $DEV_SCRIPT_DIR/../dependencies/includes/miniaudio
+        cp -r "$miniaudio_include_dir"/. $DEV_SCRIPT_DIR/../dependencies/includes/miniaudio
+    fi
+}
+
 build_runtime() {
     # Build the rive runtime.
     RIVE_PREMAKE_ARGS="$RIVE_PREMAKE_ARGS" build_rive.sh --file=$RIVE_RUNTIME_DIR/premake5_v2.lua ios $1 $AUDIO_FLAG universal clean
@@ -123,7 +150,7 @@ build_runtime() {
     cp -r out/ios_universal_$1/libminiaudio.a $DEV_SCRIPT_DIR/../dependencies/$1/libminiaudio.a
     cp -r out/ios_universal_$1/librive.a $DEV_SCRIPT_DIR/../dependencies/$1/librive.a
     cp -r out/ios_universal_$1/libluau_vm.a $DEV_SCRIPT_DIR/../dependencies/$1/libluau_vm.a
-    cp -r $RIVE_RUNTIME_DIR/include $DEV_SCRIPT_DIR/../dependencies/includes/rive
+    copy_runtime_headers
 
     # Build rive_cg_renderer.
     pushd $RIVE_RUNTIME_DIR/cg_renderer
@@ -163,7 +190,7 @@ build_runtime_sim() {
     cp -r out/iossim_universal_$1/libminiaudio.a $DEV_SCRIPT_DIR/../dependencies/$1/libminiaudio_sim.a
     cp -r out/iossim_universal_$1/librive.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_sim.a
     cp -r out/iossim_universal_$1/libluau_vm.a $DEV_SCRIPT_DIR/../dependencies/$1/libluau_vm_sim.a
-    cp -r $RIVE_RUNTIME_DIR/include $DEV_SCRIPT_DIR/../dependencies/includes/rive
+    copy_runtime_headers
 
     # Build rive_cg_renderer.
     pushd $RIVE_RUNTIME_DIR/cg_renderer
@@ -204,7 +231,7 @@ build_runtime_macosx() {
     cp -r out/universal_$1/libminiaudio.a $DEV_SCRIPT_DIR/../dependencies/$1/libminiaudio_macos.a
     cp -r out/universal_$1/librive.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_macos.a
     cp -r out/universal_$1/libluau_vm.a $DEV_SCRIPT_DIR/../dependencies/$1/libluau_vm_macos.a
-    cp -r $RIVE_RUNTIME_DIR/include $DEV_SCRIPT_DIR/../dependencies/includes/rive
+    copy_runtime_headers
 
     # Build rive_cg_renderer.
     pushd $RIVE_RUNTIME_DIR/cg_renderer
@@ -244,7 +271,7 @@ build_runtime_xros() {
     cp -r out/xros_$1/libminiaudio.a $DEV_SCRIPT_DIR/../dependencies/$1/libminiaudio_xros.a
     cp -r out/xros_$1/librive.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_xros.a
     cp -r out/xros_$1/libluau_vm.a $DEV_SCRIPT_DIR/../dependencies/$1/libluau_vm_xros.a
-    cp -r $RIVE_RUNTIME_DIR/include $DEV_SCRIPT_DIR/../dependencies/includes/rive
+    copy_runtime_headers
 
     # Build rive_cg_renderer.
     pushd $RIVE_RUNTIME_DIR/cg_renderer
@@ -284,7 +311,7 @@ build_runtime_xrsimulator() {
     cp -r out/xrsimulator_universal_$1/libminiaudio.a $DEV_SCRIPT_DIR/../dependencies/$1/libminiaudio_xrsimulator.a
     cp -r out/xrsimulator_universal_$1/librive.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_xrsimulator.a
     cp -r out/xrsimulator_universal_$1/libluau_vm.a $DEV_SCRIPT_DIR/../dependencies/$1/libluau_vm_xrsimulator.a
-    cp -r $RIVE_RUNTIME_DIR/include $DEV_SCRIPT_DIR/../dependencies/includes/rive
+    copy_runtime_headers
 
     # Build rive_cg_renderer.
     pushd $RIVE_RUNTIME_DIR/cg_renderer
@@ -324,7 +351,7 @@ build_runtime_appletvos() {
     cp -r out/appletvos_$1/libminiaudio.a $DEV_SCRIPT_DIR/../dependencies/$1/libminiaudio_appletvos.a
     cp -r out/appletvos_$1/librive.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_appletvos.a
     cp -r out/appletvos_$1/libluau_vm.a $DEV_SCRIPT_DIR/../dependencies/$1/libluau_vm_appletvos.a
-    cp -r $RIVE_RUNTIME_DIR/include $DEV_SCRIPT_DIR/../dependencies/includes/rive
+    copy_runtime_headers
 
     # Build rive_cg_renderer.
     pushd $RIVE_RUNTIME_DIR/cg_renderer
@@ -365,7 +392,7 @@ build_runtime_appletvsimulator() {
     cp -r out/appletvsimulator_universal_$1/libminiaudio.a $DEV_SCRIPT_DIR/../dependencies/$1/libminiaudio_appletvsimulator.a
     cp -r out/appletvsimulator_universal_$1/librive.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_appletvsimulator.a
     cp -r out/appletvsimulator_universal_$1/libluau_vm.a $DEV_SCRIPT_DIR/../dependencies/$1/libluau_vm_appletvsimulator.a
-    cp -r $RIVE_RUNTIME_DIR/include $DEV_SCRIPT_DIR/../dependencies/includes/rive
+    copy_runtime_headers
 
     # Build rive_cg_renderer.
     pushd $RIVE_RUNTIME_DIR/cg_renderer
@@ -412,7 +439,7 @@ build_runtime_maccatalyst() {
         cp -r out/maccatalyst_${arch}_${config}/libminiaudio.a $DEV_SCRIPT_DIR/../dependencies/${config}/libminiaudio_maccatalyst_${arch}.a
         cp -r out/maccatalyst_${arch}_${config}/librive.a $DEV_SCRIPT_DIR/../dependencies/${config}/librive_maccatalyst_${arch}.a
         cp -r out/maccatalyst_${arch}_${config}/libluau_vm.a $DEV_SCRIPT_DIR/../dependencies/${config}/libluau_vm_maccatalyst_${arch}.a
-        cp -r $RIVE_RUNTIME_DIR/include $DEV_SCRIPT_DIR/../dependencies/includes/rive
+        copy_runtime_headers
 
         # Build rive_cg_renderer.
         pushd $RIVE_RUNTIME_DIR/cg_renderer
