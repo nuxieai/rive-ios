@@ -264,12 +264,49 @@ static void RiveInstallScriptModule(lua_State* L,
         {
             continue;
         }
+
+        // Dotted function names ("response.set") install as nested tables
+        // ("module.response.set" in script). Host dispatch is unchanged: the
+        // closure keeps the full dotted name, which stays the lookup key in
+        // the module's function dictionary.
+        NSArray<NSString*>* pathComponents =
+            [functionName componentsSeparatedByString:@"."];
+        BOOL validPath = YES;
+        for (NSString* component in pathComponents)
+        {
+            if (component.length == 0)
+            {
+                validPath = NO;
+                break;
+            }
+        }
+        if (!validPath)
+        {
+            continue;
+        }
+
+        int nestedDepth = 0;
+        for (NSUInteger i = 0; i + 1 < pathComponents.count; i++)
+        {
+            const char* key = pathComponents[i].UTF8String;
+            lua_getfield(L, -1, key);
+            if (!lua_istable(L, -1))
+            {
+                lua_pop(L, 1);
+                lua_createtable(L, 0, 1);
+                lua_pushvalue(L, -1);
+                lua_setfield(L, -3, key);
+            }
+            nestedDepth++;
+        }
+
         lua_pushlightuserdata(L, (__bridge void*)runtime);
         lua_pushstring(L, module.name.UTF8String);
         lua_pushstring(L, functionName.UTF8String);
         lua_pushcclosurek(
             L, RiveScriptHostFunction, "rive.hostFunction", 3, nullptr);
-        lua_setfield(L, -2, functionName.UTF8String);
+        lua_setfield(L, -2, pathComponents.lastObject.UTF8String);
+        lua_pop(L, nestedDepth);
     }
 
     lua_settable(L, -3);
