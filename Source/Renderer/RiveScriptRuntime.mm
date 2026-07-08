@@ -12,7 +12,9 @@
 #include <map>
 #include <memory>
 
+#include "rive/assets/script_asset.hpp"
 #include "rive/factory.hpp"
+#include "rive/file.hpp"
 #include "rive/lua/rive_lua_libs.hpp"
 #include "rive/lua/scripting_vm.hpp"
 #include "rive/refcnt.hpp"
@@ -208,6 +210,7 @@ static void RivePushObjectToLua(lua_State* L, id object, int depth)
 
 @interface RiveScriptRuntime ()
 - (rive::ScriptingVM*)scriptingVMForFactory:(rive::Factory*)factory;
+- (void)registerUnverifiedScriptsInFile:(rive::File*)file;
 - (id)invokeModuleNamed:(NSString*)moduleName
           functionNamed:(NSString*)functionName
               arguments:(NSArray<id>*)arguments;
@@ -388,6 +391,65 @@ static void RiveInstallScriptModule(lua_State* L,
         }
     }
     return _scriptingVM.get();
+}
+
+- (void)registerUnverifiedScriptsInFile:(rive::File*)file
+{
+    if (!self.allowsUnverifiedScripts || file == nullptr ||
+        _scriptingVM == nullptr ||
+        file->scriptingVM() != _scriptingVM.get())
+    {
+        return;
+    }
+
+    // Import already registered every verified script asset. This mirrors
+    // that registration for the assets the verified-only gate skipped,
+    // because the host explicitly opted in to running its own unsigned
+    // content.
+    lua_State* state = _scriptingVM->state();
+    for (const rive::rcp<rive::FileAsset>& asset : file->assets())
+    {
+        if (asset == nullptr || !asset->is<rive::ScriptAsset>())
+        {
+            continue;
+        }
+        rive::ScriptAsset* scriptAsset = asset->as<rive::ScriptAsset>();
+        if (scriptAsset->verified())
+        {
+            continue;
+        }
+        rive::Span<uint8_t> bytecode = scriptAsset->moduleBytecode();
+        if (bytecode.empty())
+        {
+            continue;
+        }
+        std::string moduleName = scriptAsset->moduleName();
+        if (scriptAsset->isProtocolScript())
+        {
+            if (rive::ScriptingVM::registerScript(state,
+                                                  moduleName.c_str(),
+                                                  bytecode))
+            {
+                // registerScript leaves the script function on the stack;
+                // keep a ref so scripted objects can bind to it, matching
+                // the runtime's own registration path.
+                int functionRef = 0;
+                if (static_cast<lua_Type>(lua_type(state, -1)) ==
+                    LUA_TFUNCTION)
+                {
+                    functionRef = lua_ref(state, -1);
+                }
+                lua_pop(state, 1);
+                scriptAsset->registrationComplete(functionRef);
+            }
+        }
+        else if (rive::ScriptingVM::registerModule(state,
+                                                   moduleName.c_str(),
+                                                   bytecode))
+        {
+            scriptAsset->registrationComplete(0);
+        }
+    }
 }
 
 - (id)invokeModuleNamed:(NSString*)moduleName
