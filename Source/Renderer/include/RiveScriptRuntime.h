@@ -36,6 +36,14 @@ typedef id _Nullable (^RiveScriptFunction)(NSArray<id>* arguments);
 /// pass it to a RiveFile initializer that accepts scriptRuntime.
 @interface RiveScriptRuntime : NSObject
 
+/// When YES, script assets whose content signature could not be verified are
+/// still registered with the scripting VM after a file imports. Defaults to
+/// NO, which preserves the runtime's signed-content requirement. Only enable
+/// this for files whose scripts the host application itself authored or
+/// otherwise trusts; unverified bytecode runs with the same privileges as
+/// verified bytecode.
+@property(nonatomic) BOOL allowsUnverifiedScripts;
+
 - (instancetype)initWithModules:(NSArray<RiveScriptModule*>*)modules;
 - (void)addModule:(RiveScriptModule*)module NS_SWIFT_NAME(add(_:));
 

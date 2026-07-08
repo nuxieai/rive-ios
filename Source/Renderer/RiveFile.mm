@@ -19,6 +19,7 @@
 
 @interface RiveScriptRuntime ()
 - (rive::ScriptingVM*)scriptingVMForFactory:(rive::Factory*)factory;
+- (void)registerUnverifiedScriptsInFile:(rive::File*)file;
 @end
 
 /*
@@ -507,6 +508,7 @@
     {
         riveFile = file;
         scriptRuntime = runtime;
+        [runtime registerUnverifiedScriptsInFile:file.get()];
         return true;
     }
 
