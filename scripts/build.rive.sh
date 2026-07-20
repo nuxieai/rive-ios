@@ -17,14 +17,13 @@ if [ -z "${RIVE_PREMAKE_ARGS+null_detector_string}" ]; then
     RIVE_PREMAKE_ARGS="--with_rive_layout"
 fi
 
-# Device scripting exposes GPUCanvas only when the runtime is compiled with
-# both RIVE_CANVAS and RIVE_ORE. The runtime premake owns RIVE_CANVAS while the
-# renderer premake owns RIVE_ORE; the Apple package wrapper keeps both
-# contracts enabled in each static library without changing the submodule.
-RIVE_PREMAKE_ARGS="$RIVE_PREMAKE_ARGS --with_rive_canvas"
-RIVE_RUNTIME_CPPFLAGS="${CPPFLAGS:+$CPPFLAGS }-DRIVE_ORE"
-RIVE_RENDERER_PREMAKE_ARGS="--with_rive_canvas"
-RIVE_RENDERER_PREMAKE_FILE="$DEV_SCRIPT_DIR/premake5_pls_renderer_canvas.lua"
+# iOS device scripting exposes GPUCanvas only when the runtime is compiled
+# with both RIVE_CANVAS and RIVE_ORE. Keep this capability scoped to the iOS
+# device/simulator slices; other Apple platforms retain their upstream build
+# until their ORE backends support the same contract.
+RIVE_IOS_RUNTIME_CPPFLAGS="${CPPFLAGS:+$CPPFLAGS }-DRIVE_ORE"
+RIVE_IOS_RENDERER_PREMAKE_ARGS="--with_rive_canvas"
+RIVE_IOS_RENDERER_PREMAKE_FILE="$DEV_SCRIPT_DIR/premake5_pls_renderer_canvas.lua"
 
 NO_AUDIO=false
 NO_TEXT=false
@@ -75,6 +74,10 @@ fi
 if [ "$NO_SCRIPTING" = false ]; then
     RIVE_PREMAKE_ARGS="$RIVE_PREMAKE_ARGS --with_rive_scripting"
 fi
+
+# Derive this after the feature switches above so iOS retains the selected
+# audio, text, and scripting capabilities in addition to GPU canvas.
+RIVE_IOS_PREMAKE_ARGS="$RIVE_PREMAKE_ARGS --with_rive_canvas"
 
 # Handle preprocessor definitions for audio, text, and scripting
 # Build the definitions string
@@ -151,7 +154,7 @@ copy_runtime_headers() {
 
 build_runtime() {
     # Build the rive runtime.
-    CPPFLAGS="$RIVE_RUNTIME_CPPFLAGS" RIVE_PREMAKE_ARGS="$RIVE_PREMAKE_ARGS" build_rive.sh --file=$RIVE_RUNTIME_DIR/premake5_v2.lua ios $1 $AUDIO_FLAG universal clean
+    CPPFLAGS="$RIVE_IOS_RUNTIME_CPPFLAGS" RIVE_PREMAKE_ARGS="$RIVE_IOS_PREMAKE_ARGS" build_rive.sh --file=$RIVE_RUNTIME_DIR/premake5_v2.lua ios $1 $AUDIO_FLAG universal clean
 
     cp -r out/ios_universal_$1/librive_harfbuzz.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_harfbuzz.a
     cp -r out/ios_universal_$1/librive_yoga.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_yoga.a
@@ -172,7 +175,7 @@ build_runtime() {
 
     # Build rive_pls_renderer.
     pushd $RIVE_PLS_DIR
-    premake5 --config=$1 --out=out/iphoneos_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=$RIVE_RENDERER_PREMAKE_FILE $RIVE_RENDERER_PREMAKE_ARGS --with_objc_exceptions --os=ios gmake2
+    premake5 --config=$1 --out=out/iphoneos_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=$RIVE_IOS_RENDERER_PREMAKE_FILE $RIVE_IOS_RENDERER_PREMAKE_ARGS --with_objc_exceptions --os=ios gmake2
     make -C out/iphoneos_$1 clean
     make -C out/iphoneos_$1 -j12 rive_pls_renderer
     popd
@@ -191,7 +194,7 @@ build_runtime() {
 
 build_runtime_sim() {
     # Build the rive runtime.
-    CPPFLAGS="$RIVE_RUNTIME_CPPFLAGS" RIVE_PREMAKE_ARGS="$RIVE_PREMAKE_ARGS" build_rive.sh --file=$RIVE_RUNTIME_DIR/premake5_v2.lua iossim $1 $AUDIO_FLAG clean
+    CPPFLAGS="$RIVE_IOS_RUNTIME_CPPFLAGS" RIVE_PREMAKE_ARGS="$RIVE_IOS_PREMAKE_ARGS" build_rive.sh --file=$RIVE_RUNTIME_DIR/premake5_v2.lua iossim $1 $AUDIO_FLAG clean
 
     cp -r out/iossim_universal_$1/librive_harfbuzz.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_harfbuzz_sim.a
     cp -r out/iossim_universal_$1/librive_yoga.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_yoga_sim.a
@@ -213,7 +216,7 @@ build_runtime_sim() {
 
     # Build rive_pls_renderer.
     pushd $RIVE_PLS_DIR
-    premake5 --config=$1 --out=out/iphonesimulator_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=$RIVE_RENDERER_PREMAKE_FILE $RIVE_RENDERER_PREMAKE_ARGS --with_objc_exceptions --os=ios --variant=emulator gmake2
+    premake5 --config=$1 --out=out/iphonesimulator_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=$RIVE_IOS_RENDERER_PREMAKE_FILE $RIVE_IOS_RENDERER_PREMAKE_ARGS --with_objc_exceptions --os=ios --variant=emulator gmake2
     make -C out/iphonesimulator_$1 clean
     make -C out/iphonesimulator_$1 -j12 rive_pls_renderer
     popd
@@ -232,7 +235,7 @@ build_runtime_sim() {
 
 build_runtime_macosx() {
     # Build the rive runtime.
-    CPPFLAGS="$RIVE_RUNTIME_CPPFLAGS" RIVE_PREMAKE_ARGS="$RIVE_PREMAKE_ARGS" build_rive.sh --file=$RIVE_RUNTIME_DIR/premake5_v2.lua $1 universal $AUDIO_FLAG clean
+    RIVE_PREMAKE_ARGS="$RIVE_PREMAKE_ARGS" build_rive.sh --file=$RIVE_RUNTIME_DIR/premake5_v2.lua $1 universal $AUDIO_FLAG clean
 
     cp -r out/universal_$1/librive_harfbuzz.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_harfbuzz_macos.a
     cp -r out/universal_$1/librive_yoga.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_yoga_macos.a
@@ -253,7 +256,7 @@ build_runtime_macosx() {
 
     # Build rive_pls_renderer.
     pushd $RIVE_PLS_DIR
-    premake5 --config=$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=$RIVE_RENDERER_PREMAKE_FILE $RIVE_RENDERER_PREMAKE_ARGS --with_objc_exceptions --os=macosx gmake2
+    premake5 --config=$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --with_objc_exceptions --os=macosx gmake2
     make -C out/$1 clean
     make -C out/$1 -j12 rive_pls_renderer
     popd
@@ -272,7 +275,7 @@ build_runtime_macosx() {
 
 build_runtime_xros() {
     # Build the rive runtime.
-    RIVE_OUT=out/xros_$1 CPPFLAGS="$RIVE_RUNTIME_CPPFLAGS" RIVE_PREMAKE_ARGS="$RIVE_PREMAKE_ARGS" build_rive.sh --file=$RIVE_RUNTIME_DIR/premake5_v2.lua xros $1 $AUDIO_FLAG clean
+    RIVE_OUT=out/xros_$1 RIVE_PREMAKE_ARGS="$RIVE_PREMAKE_ARGS" build_rive.sh --file=$RIVE_RUNTIME_DIR/premake5_v2.lua xros $1 $AUDIO_FLAG clean
 
     cp -r out/xros_$1/librive_harfbuzz.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_harfbuzz_xros.a
     cp -r out/xros_$1/librive_yoga.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_yoga_xros.a
@@ -293,7 +296,7 @@ build_runtime_xros() {
 
     # Build rive_pls_renderer.
     pushd $RIVE_PLS_DIR
-    premake5 --config=$1 --out=out/xros_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=$RIVE_RENDERER_PREMAKE_FILE $RIVE_RENDERER_PREMAKE_ARGS --with_objc_exceptions --os=ios --variant=xros gmake2
+    premake5 --config=$1 --out=out/xros_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --with_objc_exceptions --os=ios --variant=xros gmake2
     make -C out/xros_$1 clean
     make -C out/xros_$1 -j12 rive_pls_renderer
     popd
@@ -312,7 +315,7 @@ build_runtime_xros() {
 
 build_runtime_xrsimulator() {
     # Build the rive runtime.
-    RIVE_OUT=out/xrsimulator_universal_$1 CPPFLAGS="$RIVE_RUNTIME_CPPFLAGS" RIVE_PREMAKE_ARGS="$RIVE_PREMAKE_ARGS" build_rive.sh --file=$RIVE_RUNTIME_DIR/premake5_v2.lua xrsimulator $1 $AUDIO_FLAG clean
+    RIVE_OUT=out/xrsimulator_universal_$1 RIVE_PREMAKE_ARGS="$RIVE_PREMAKE_ARGS" build_rive.sh --file=$RIVE_RUNTIME_DIR/premake5_v2.lua xrsimulator $1 $AUDIO_FLAG clean
 
     cp -r out/xrsimulator_universal_$1/librive_harfbuzz.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_harfbuzz_xrsimulator.a
     cp -r out/xrsimulator_universal_$1/librive_yoga.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_yoga_xrsimulator.a
@@ -334,7 +337,7 @@ build_runtime_xrsimulator() {
 
     # Build rive_pls_renderer.
     pushd $RIVE_PLS_DIR
-    premake5 --config=$1 --out=out/xrsimulator_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=$RIVE_RENDERER_PREMAKE_FILE $RIVE_RENDERER_PREMAKE_ARGS --with_objc_exceptions --os=ios --variant=xrsimulator gmake2
+    premake5 --config=$1 --out=out/xrsimulator_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --with_objc_exceptions --os=ios --variant=xrsimulator gmake2
     make -C out/xrsimulator_$1 clean
     make -C out/xrsimulator_$1 -j12 rive_pls_renderer
     popd
@@ -352,7 +355,7 @@ build_runtime_xrsimulator() {
 }
 
 build_runtime_appletvos() {
-    RIVE_OUT=out/appletvos_$1 CPPFLAGS="$RIVE_RUNTIME_CPPFLAGS" RIVE_PREMAKE_ARGS="$RIVE_PREMAKE_ARGS" build_rive.sh --file=$RIVE_RUNTIME_DIR/premake5_v2.lua appletvos $1 $AUDIO_FLAG clean
+    RIVE_OUT=out/appletvos_$1 RIVE_PREMAKE_ARGS="$RIVE_PREMAKE_ARGS" build_rive.sh --file=$RIVE_RUNTIME_DIR/premake5_v2.lua appletvos $1 $AUDIO_FLAG clean
 
     cp -r out/appletvos_$1/librive_harfbuzz.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_harfbuzz_appletvos.a
     cp -r out/appletvos_$1/librive_yoga.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_yoga_appletvos.a
@@ -373,7 +376,7 @@ build_runtime_appletvos() {
 
     # Build rive_pls_renderer.
     pushd $RIVE_PLS_DIR
-    premake5 --config=$1 --out=out/appletvos_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=$RIVE_RENDERER_PREMAKE_FILE $RIVE_RENDERER_PREMAKE_ARGS --with_objc_exceptions --os=ios --variant=appletvos gmake2
+    premake5 --config=$1 --out=out/appletvos_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --with_objc_exceptions --os=ios --variant=appletvos gmake2
     make -C out/appletvos_$1 clean
     make -C out/appletvos_$1 -j12 rive_pls_renderer
     popd
@@ -393,7 +396,7 @@ build_runtime_appletvos() {
 }
 
 build_runtime_appletvsimulator() {
-    RIVE_OUT=out/appletvsimulator_universal_$1 CPPFLAGS="$RIVE_RUNTIME_CPPFLAGS" RIVE_PREMAKE_ARGS="$RIVE_PREMAKE_ARGS" build_rive.sh --file=$RIVE_RUNTIME_DIR/premake5_v2.lua appletvsimulator $1 $AUDIO_FLAG clean
+    RIVE_OUT=out/appletvsimulator_universal_$1 RIVE_PREMAKE_ARGS="$RIVE_PREMAKE_ARGS" build_rive.sh --file=$RIVE_RUNTIME_DIR/premake5_v2.lua appletvsimulator $1 $AUDIO_FLAG clean
 
     cp -r out/appletvsimulator_universal_$1/librive_harfbuzz.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_harfbuzz_appletvsimulator.a
     cp -r out/appletvsimulator_universal_$1/librive_yoga.a $DEV_SCRIPT_DIR/../dependencies/$1/librive_yoga_appletvsimulator.a
@@ -415,7 +418,7 @@ build_runtime_appletvsimulator() {
 
     # Build rive_pls_renderer.
     pushd $RIVE_PLS_DIR
-    premake5 --config=$1 --out=out/appletvsimulator_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=$RIVE_RENDERER_PREMAKE_FILE $RIVE_RENDERER_PREMAKE_ARGS --with_objc_exceptions --os=ios --variant=appletvsimulator gmake2
+    premake5 --config=$1 --out=out/appletvsimulator_$1 --arch=universal --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --with_objc_exceptions --os=ios --variant=appletvsimulator gmake2
     make -C out/appletvsimulator_$1 clean
     make -C out/appletvsimulator_$1 -j12 rive_pls_renderer
     popd
@@ -440,7 +443,7 @@ build_runtime_maccatalyst() {
         local arch=$2
         
         # Build the rive runtime.
-        RIVE_OUT=out/maccatalyst_${arch}_${config} CPPFLAGS="$RIVE_RUNTIME_CPPFLAGS" RIVE_PREMAKE_ARGS="$RIVE_PREMAKE_ARGS" build_rive.sh --file=$RIVE_RUNTIME_DIR/premake5_v2.lua ${config} ${arch} $AUDIO_FLAG --variant=maccatalyst clean
+        RIVE_OUT=out/maccatalyst_${arch}_${config} RIVE_PREMAKE_ARGS="$RIVE_PREMAKE_ARGS" build_rive.sh --file=$RIVE_RUNTIME_DIR/premake5_v2.lua ${config} ${arch} $AUDIO_FLAG --variant=maccatalyst clean
 
         cp -r out/maccatalyst_${arch}_${config}/librive_harfbuzz.a $DEV_SCRIPT_DIR/../dependencies/${config}/librive_harfbuzz_maccatalyst_${arch}.a
         cp -r out/maccatalyst_${arch}_${config}/librive_yoga.a $DEV_SCRIPT_DIR/../dependencies/${config}/librive_yoga_maccatalyst_${arch}.a
@@ -461,7 +464,7 @@ build_runtime_maccatalyst() {
 
         # Build rive_pls_renderer.
         pushd $RIVE_PLS_DIR
-        premake5 --config=${config} --out=out/maccatalyst_${arch}_${config} --arch=${arch} --scripts=$RIVE_RUNTIME_DIR/build --file=$RIVE_RENDERER_PREMAKE_FILE $RIVE_RENDERER_PREMAKE_ARGS --with_objc_exceptions --os=macosx --variant=maccatalyst gmake2
+        premake5 --config=${config} --out=out/maccatalyst_${arch}_${config} --arch=${arch} --scripts=$RIVE_RUNTIME_DIR/build --file=premake5_pls_renderer.lua --with_objc_exceptions --os=macosx --variant=maccatalyst gmake2
         make -C out/maccatalyst_${arch}_${config} clean
         make -C out/maccatalyst_${arch}_${config} -j12 rive_pls_renderer
         popd
